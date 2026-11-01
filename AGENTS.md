@@ -32,7 +32,7 @@ Rust **1.85+** stable. `Cargo.lock` is committed; CI and release use `--locked`.
 cargo build
 cargo build --release --bin torrenter
 
-# GUI (Linux needs GTK 3 + xcb dev packages; see README Install)
+# GUI (Linux needs GTK 3 + xcb dev packages; see README Linux / Development)
 cargo build --features gui --bin torrenter-gui
 cargo build --release --features gui --bin torrenter-gui
 

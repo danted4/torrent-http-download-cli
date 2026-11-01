@@ -8,6 +8,19 @@
 
 ![torrenter cli](docs/cli.jpg)
 
+No arguments opens the interactive menu (magnet, HTTP, auto-update, seed, download folder). Subcommands:
+
+```bash
+torrenter magnet "magnet:?xt=urn:btih:…"
+torrenter http "https://example.com/large-file.iso"
+torrenter magnet "magnet:?xt=urn:btih:…" --dir /tmp/out   # one-shot, not saved
+torrenter --auto-update          # persist: check GitHub Releases on startup (TTY only)
+torrenter --no-auto-update
+torrenter update                 # install the latest matching CLI asset now
+```
+
+While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop.
+
 Downloader with two engines and two fronts. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary and a **native GUI** binary (egui, no HTML/CSS).
 
 1. **Magnet / torrent** — BitTorrent via [librqbit](https://github.com/ikatson/rqbit)
@@ -15,7 +28,7 @@ Downloader with two engines and two fronts. Each [GitHub Release](https://github
 
 Output goes to `<OS Downloads>/torrenter` until you pick another folder. Both fronts show `danted4/torrenter vX.Y.Z`. Auto-update is **off** by default.
 
-Pick your OS below, then see [Usage](#usage) for magnet vs HTTP, pause/stop, and the GUI.
+Pick your OS below. Magnet vs HTTP is in [Two download modes](#two-download-modes).
 
 ## Linux
 
@@ -46,7 +59,7 @@ Pick your OS below, then see [Usage](#usage) for magnet vs HTTP, pause/stop, and
 
 Linux does **not** show SmartScreen or Gatekeeper. Outbound network is allowed by default on most desktops, so there is usually **no popup**. If a firewall GUI (ufw, firewalld, a VPN client) asks, click **Allow**. Share-mode magnets listen on a random high TCP port; a deny-incoming firewall can block seeding even when downloads still work.
 
-No Rust/Cargo is needed at runtime. Building from source is under [Development](#development).
+No Rust/Cargo is needed at runtime. Building from source is in the [Development](#development) section.
 
 ## Windows
 
@@ -115,7 +128,7 @@ Do not click **Cancel** or **Don’t allow** if you want magnet share mode or in
 
 If you clicked Don’t Allow, open **System Settings → Network → Firewall** (or **Privacy & Security → Local Network**) and enable torrenter, then relaunch. Gatekeeper can also return after an update — clear quarantine again if macOS refuses to open the new file.
 
-No Rust/Cargo is needed at runtime. Building from source is under [Development](#development).
+No Rust/Cargo is needed at runtime. Building from source is in the [Development](#development) section.
 
 ## Two download modes
 
@@ -134,56 +147,19 @@ Magnet links need a 32-character base32 or 40-character hex info hash. `.torrent
 
 Single-stream HTTP **does not resume**. It truncates the destination and starts over.
 
-## Usage
+HTTP pause aborts the live Range body and continues from `<dest>/.resume/` on resume. Pause on a single-stream (no Range) download starts that GET over. Stop is honored during HEAD, range probe, part copy, and merge.
 
-### CLI
+Torrent mode uses DHT in memory only. **Share** (default, `seed: on`) uploads while downloading, opens an incoming TCP listen on a random high port, and stays connected after 100% until you press `2` or quit — `torrenter magnet` will not return when the file is complete. **Leech** (`seed: off`) never uploads and calls `session.stop()` at 100%. Each magnet writes into `<dest>/<torrent-name>/` (whitespace becomes `_`). If the magnet has no name, or that folder belongs to a different info-hash, the folder is the hash (or `name_hash`). Overwrite is allowed only inside that folder so a retry can resume. Closing the CLI or GUI drops every seed.
 
-Interactive (no arguments):
-
-```
-danted4/torrenter v3.2.3
-auto-update: off
-seed: on
-download: /Users/you/Downloads/torrenter
-Choose download type:
-1. Magnet URL
-2. Direct URL (multi-part)
-3. Toggle auto-update
-4. Update now
-5. Toggle seed
-6. Change download folder
-```
-
-Commands:
-
-```bash
-torrenter magnet "magnet:?xt=urn:btih:…"
-torrenter http "https://example.com/large-file.iso"
-torrenter magnet "magnet:?xt=urn:btih:…" --dir /tmp/out   # one-shot, not saved
-torrenter --auto-update          # persist: check GitHub Releases on startup (TTY only)
-torrenter --no-auto-update
-torrenter update                 # install the latest matching CLI asset now
-```
-
-While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop. HTTP pause aborts the live Range body and continues from `<dest>/.resume/` on resume. Pause on a single-stream (no Range) download starts that GET over. Stop is honored during HEAD, range probe, part copy, and merge.
-
-Torrent mode uses DHT in memory only. **Share** (default, `seed: on`) uploads while downloading, opens an incoming TCP listen on a random high port, and stays connected after 100% until you press `2` or quit — `torrenter magnet` will not return when the file is complete. **Leech** (`seed: off`) never uploads and calls `session.stop()` at 100%. The OS may prompt for a firewall exception the first time a share-mode magnet runs. Each magnet writes into `<dest>/<torrent-name>/` (whitespace becomes `_`) so two torrents with the same filenames do not clobber each other. If the magnet has no name, or that folder belongs to a different info-hash, the folder is the hash (or `name_hash`). Overwrite is allowed only inside that folder so a retry can resume. Closing the CLI or GUI drops every seed.
-
-Startup auto-update is skipped when stdin is not a TTY (scripts, pipes). `torrenter update` always runs when you ask.
-
-### GUI
-
-Same engines, phosphor / amber / ice themes (last pick is saved in config), magnet/HTTP swap on the URL row, share/leech glyphs (halo vs horns) between the URL field and START (faded and inactive in HTTP mode), dest path under the URL row, pause / stop / clear per row. **Stop** immediately shows **clear** (and **restart**), including queued or incomplete magnets — not only after 100%. Click a job title to open that job’s folder. Idle magnet and stopped HTTP rows use **restart**, which opens a confirm popup (original mode and dest; START begins the job). A **search** field above the list filters jobs by title, URL, folder, MAGNET/HTTP, or info-hash (`Esc` clears). Auto-update checkbox. Update-check notes and folder errors land in a bottom-right toast (info ~1.5s, errors 5s, click to dismiss; in-progress “checking/installing” and dest/update fatals stay until replaced or clicked). The window must stay open to keep seeding.
-
-At most four downloads run at once; further rows stay queued. The same magnet (or HTTP URL) cannot start twice while it is already active. A second copy of the same info hash also waits on an in-process folder lock.
-
-The GUI binary only replaces itself with `torrenter-gui-*` assets; the CLI binary only replaces itself with `torrenter-*` assets. The binary directory must be writable. Auto and manual install are the same: the new Mach-O overwrites **this** executable (Windows first renames the running file to `*.old`). Startup deletes leftover `*.old`, `.*.update`, and `.*.sha256sums` next to it. If you launched from `torrenter.app`, that bundle stays; only `Contents/MacOS/torrenter-gui` is swapped, then `Info.plist` is restamped and the app is ad-hoc signed again. Other copies (Downloads, an old zip) are not searched or deleted.
+The GUI uses the same engines: phosphor / amber / ice (last pick saved), magnet/HTTP swap on the URL row, share/leech glyphs, dest path, pause / stop / clear per row. **Stop** immediately shows **clear** (and **restart**). Click a job title to open that job’s folder. Idle rows use **restart** (confirm popup with original mode and dest). Search filters jobs (`Esc` clears). At most four downloads run at once; the same magnet or HTTP URL cannot start twice while it is already active. The window must stay open to keep seeding.
 
 ## Updates
 
 Opt-in. The updater downloads only `https://github.com/danted4/torrenter/releases/download/<tag>/<name>` (tag in the path must match the release), checks `SHA256SUMS`, caps size, and times out. GitHub then 302s to `objects.githubusercontent.com`; that redirect is followed because the first hop is pinned.
 
 `SHA256SUMS` is **same-publisher integrity**, not a signature. A stolen GitHub token can still ship a binary and a matching sums file.
+
+Startup auto-update is skipped when stdin is not a TTY (scripts, pipes). `torrenter update` always runs when you ask. The GUI binary only replaces itself with `torrenter-gui-*` assets; the CLI binary only replaces itself with `torrenter-*` assets. The binary directory must be writable. Auto and manual install are the same: the new Mach-O overwrites **this** executable (Windows first renames the running file to `*.old`). Startup deletes leftover `*.old`, `.*.update`, and `.*.sha256sums` next to it. If you launched from `torrenter.app`, that bundle stays; only `Contents/MacOS/torrenter-gui` is swapped, then `Info.plist` is restamped and the app is ad-hoc signed again. Other copies (Downloads, an old zip) are not searched or deleted.
 
 ## Progress bar
 

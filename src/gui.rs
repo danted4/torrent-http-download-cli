@@ -84,6 +84,13 @@ fn job_bar_fraction(status: &str, downloaded: u64, total: u64) -> Option<f32> {
     Some((downloaded as f32 / total as f32).clamp(0.0, 1.0))
 }
 
+fn indeterminate_bar_offset(time: f32, span: f32) -> f32 {
+    let travel = (1.0 - span).max(0.0);
+    let cycle = (time * INDETERMINATE_HZ).rem_euclid(1.0);
+    let ping = 0.5 - 0.5 * (cycle * std::f32::consts::TAU).cos();
+    ping * travel
+}
+
 fn paint_job_progress(ui: &mut egui::Ui, accent: Color32, track: Color32, fraction: Option<f32>) {
     let desired = egui::vec2(ui.available_width(), 8.0);
     let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
@@ -95,11 +102,10 @@ fn paint_job_progress(ui: &mut egui::Ui, accent: Color32, track: Color32, fracti
     } else {
         ui.ctx().request_repaint_after(SLIDER_REPAINT);
         let t = ui.input(|input| input.time) as f32;
-        let span = 0.28;
-        let start = (t * 0.85).fract() * (1.0 - span);
+        let start = indeterminate_bar_offset(t, INDETERMINATE_SPAN);
         let mut fill = rect;
         fill.min.x += rect.width() * start;
-        fill.set_width(rect.width() * span);
+        fill.set_width(rect.width() * INDETERMINATE_SPAN);
         fill
     };
     if fill.width() > 0.5 {
@@ -225,7 +231,9 @@ const NO_UPDATES: &str = "no updates found";
 const STATUS_HOLD: Duration = Duration::from_millis(1500);
 const FAIL_HOLD: Duration = Duration::from_secs(5);
 const PERSIST_EVERY: Duration = Duration::from_secs(2);
-const SLIDER_REPAINT: Duration = Duration::from_millis(50);
+const SLIDER_REPAINT: Duration = Duration::from_millis(16);
+const INDETERMINATE_SPAN: f32 = 0.28;
+const INDETERMINATE_HZ: f32 = 0.4;
 
 enum WorkerCmd {
     Download {
@@ -829,7 +837,7 @@ impl eframe::App for GuiApp {
                                 .layout(egui::Layout::top_down(egui::Align::RIGHT)),
                             |ui| {
                                 ui.horizontal(|ui| {
-                                    if refresh_toggle(ui, self.auto_update, palette).clicked() {
+                                    if auto_update_toggle(ui, self.auto_update, palette).clicked() {
                                         self.auto_update = !self.auto_update;
                                         let _ = update::set_auto_update(self.auto_update);
                                         if self.auto_update {
@@ -1122,6 +1130,7 @@ impl eframe::App for GuiApp {
                 let mut clear_index = None;
                 let mut open_restart = None;
                 let mut reveal = None;
+                let mut copy_source = None;
                 let mut persist_now = false;
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (stripe, index) in visible.into_iter().enumerate() {
@@ -1187,6 +1196,10 @@ impl eframe::App for GuiApp {
                                     .clicked()
                                     {
                                         reveal = Some(index);
+                                    }
+                                    ui.add_space(6.0);
+                                    if copy_url_icon(ui, palette, fill).clicked() {
+                                        copy_source = Some(job.source.clone());
                                     }
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
@@ -1290,6 +1303,14 @@ impl eframe::App for GuiApp {
                     });
                     if let Some((kind, source, dest)) = reveal_job {
                         self.reveal_path(kind, &source, &dest);
+                    }
+                }
+                if let Some(source) = copy_source {
+                    if source.is_empty() {
+                        self.toast_fail("nothing to copy");
+                    } else {
+                        ctx.copy_text(source);
+                        self.toast_info("copied");
                     }
                 }
                 if let Some(index) = open_restart {
@@ -1663,43 +1684,65 @@ fn paint_swap_arrows(painter: &egui::Painter, rect: egui::Rect, color: Color32) 
     );
 }
 
-fn refresh_toggle(ui: &mut egui::Ui, on: bool, palette: Theme) -> egui::Response {
-    let color = if on { palette.fg } else { palette.dim };
+fn auto_update_toggle(ui: &mut egui::Ui, on: bool, palette: Theme) -> egui::Response {
     let galley = ui.painter().layout_no_wrap(
         "auto-update".into(),
-        FontId::new(13.0, FontFamily::Monospace),
-        color,
+        FontId::new(12.0, FontFamily::Monospace),
+        palette.dim,
     );
-    let icon = 18.0_f32;
-    let pad = 8.0_f32;
-    let size = egui::vec2(icon + 8.0 + galley.size().x + pad * 2.0, 26.0);
+    let track_w = 32.0_f32;
+    let track_h = 16.0_f32;
+    let gap = 8.0_f32;
+    let size = egui::vec2(galley.size().x + gap + track_w, 26.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let painter = ui.painter();
-    let fill = if on {
-        Color32::from_rgba_unmultiplied(palette.fg.r(), palette.fg.g(), palette.fg.b(), 28)
-    } else {
-        palette.row
-    };
-    let stroke = Stroke::new(1.0_f32, if on { palette.fg } else { palette.dim });
-    painter.rect_filled(rect, 2.0, fill);
-    painter.rect_stroke(rect, 2.0, stroke, egui::StrokeKind::Inside);
-    let icon_center = egui::pos2(rect.left() + pad + icon / 2.0, rect.center().y);
-    paint_refresh(
-        painter,
-        icon_center,
-        6.5,
-        if on { palette.fg } else { palette.dim },
-    );
     painter.galley(
-        egui::pos2(
-            rect.left() + pad + icon + 8.0,
-            rect.center().y - galley.size().y / 2.0,
-        ),
+        egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
         galley,
-        if on { palette.fg } else { palette.dim },
+        palette.dim,
     );
+    let track = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - track_w / 2.0, rect.center().y),
+        egui::vec2(track_w, track_h),
+    );
+    let rounding = track_h / 2.0;
+    let stroke = Stroke::new(1.0_f32, if on { palette.fg } else { palette.dim });
+    if on {
+        painter.rect_filled(track, rounding, palette.fg);
+    }
+    painter.rect_stroke(track, rounding, stroke, egui::StrokeKind::Inside);
+    let knob_r = 5.0_f32;
+    let knob_x = if on {
+        track.right() - 2.5 - knob_r
+    } else {
+        track.left() + 2.5 + knob_r
+    };
+    let knob_fill = if on { palette.bg } else { palette.dim };
+    painter.circle_filled(egui::pos2(knob_x, track.center().y), knob_r, knob_fill);
     click_cursor(response)
         .on_hover_text("check GitHub Releases and replace this app when a newer version exists")
+}
+
+fn copy_url_icon(ui: &mut egui::Ui, palette: Theme, page: Color32) -> egui::Response {
+    let size = egui::vec2(16.0, 16.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    paint_copy(ui.painter(), rect, palette.dim, page);
+    click_cursor(response).on_hover_text("copy URL")
+}
+
+fn paint_copy(painter: &egui::Painter, rect: egui::Rect, color: Color32, page: Color32) {
+    let stroke = Stroke::new(1.2_f32, color);
+    let back = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 5.0, rect.top() + 2.5),
+        egui::pos2(rect.right() - 2.5, rect.bottom() - 5.0),
+    );
+    let front = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 2.5, rect.top() + 5.0),
+        egui::pos2(rect.right() - 5.0, rect.bottom() - 2.5),
+    );
+    painter.rect_stroke(back, 1.5, stroke, egui::StrokeKind::Inside);
+    painter.rect_filled(front, 1.5, page);
+    painter.rect_stroke(front, 1.5, stroke, egui::StrokeKind::Inside);
 }
 
 fn click_cursor(response: egui::Response) -> egui::Response {
@@ -2055,7 +2098,31 @@ mod tests {
         assert_eq!(job_bar_fraction("downloading", 25, 100), Some(0.25));
         assert_eq!(job_bar_fraction("paused", 25, 100), Some(0.25));
         assert_eq!(job_bar_fraction("downloading", 0, 0), Some(0.0));
-        assert_eq!(SLIDER_REPAINT, Duration::from_millis(50));
+        assert_eq!(SLIDER_REPAINT, Duration::from_millis(16));
+    }
+
+    #[test]
+    fn indeterminate_bar_ping_pongs_without_wrap_jump() {
+        let span = INDETERMINATE_SPAN;
+        let travel = 1.0 - span;
+        let period = 1.0 / INDETERMINATE_HZ;
+        assert!((indeterminate_bar_offset(0.0, span) - 0.0).abs() < 1e-5);
+        assert!((indeterminate_bar_offset(period * 0.5, span) - travel).abs() < 1e-4);
+        assert!((indeterminate_bar_offset(period, span) - 0.0).abs() < 1e-5);
+        let before = indeterminate_bar_offset(period - 0.02, span);
+        let after = indeterminate_bar_offset(period + 0.02, span);
+        assert!(
+            before < 0.04,
+            "near wrap should stay at the left, got {before}"
+        );
+        assert!(
+            after < 0.04,
+            "after wrap should stay at the left, got {after}"
+        );
+        let mid_left = indeterminate_bar_offset(period * 0.25, span);
+        let mid_right = indeterminate_bar_offset(period * 0.75, span);
+        assert!((mid_left - mid_right).abs() < 0.02);
+        assert!(mid_left > travel * 0.4 && mid_left < travel * 0.6);
     }
 
     #[test]

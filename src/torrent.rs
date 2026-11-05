@@ -10,7 +10,7 @@ use librqbit::{
     AddTorrent, AddTorrentOptions, DhtSessionConfig, ListenerOptions, Session, SessionOptions,
 };
 
-use crate::progress::{honor_control, is_stopped, watch_cli_controls, JobSnapshot, ProgressHandle};
+use crate::progress::{check_stop, is_stopped, watch_cli_controls, JobSnapshot, ProgressHandle};
 use crate::validate::is_valid_magnet_url;
 
 fn magnet_folder_lock(hash: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -356,6 +356,15 @@ async fn run_torrent(
     }
     progress.set_message("0");
 
+    let mut engine_paused = false;
+    if progress.is_paused() {
+        session
+            .pause(&handle)
+            .await
+            .context("failed to pause torrent")?;
+        engine_paused = true;
+    }
+
     let completed = handle.wait_until_completed();
     tokio::pin!(completed);
     let controls = async {
@@ -371,7 +380,6 @@ async fn run_torrent(
     };
     tokio::pin!(controls);
 
-    let mut engine_paused = false;
     let mut download_done = false;
     loop {
         tokio::select! {
@@ -388,6 +396,9 @@ async fn run_torrent(
                 let (peers, uploaded, up_speed) = live_peers_and_upload(&stats);
                 progress.set_uploaded(uploaded);
                 progress.set_upload_bps(up_speed);
+                if progress.is_paused() {
+                    continue;
+                }
                 if !seed {
                     progress.finish();
                     if progress.announce() {
@@ -408,7 +419,7 @@ async fn run_torrent(
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(200)) => {
-                if let Err(error) = honor_control(progress.snapshot().map(Arc::as_ref)).await {
+                if let Err(error) = check_stop(progress.snapshot().map(Arc::as_ref)) {
                     if is_stopped(&error) {
                         if let Some(snapshot) = progress.snapshot() {
                             snapshot.mark_stopped();
@@ -438,6 +449,13 @@ async fn run_torrent(
                 if let Some(error) = stats.error {
                     progress.finish_and_clear();
                     bail!("{error}");
+                }
+                if !want_pause && download_done && !seed {
+                    progress.finish();
+                    if progress.announce() {
+                        println!("\nTorrent download finished!");
+                    }
+                    return Ok(());
                 }
                 if !want_pause && (!stats.finished || seed) {
                     let total = stats.total_bytes.max(1);

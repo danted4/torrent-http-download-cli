@@ -97,6 +97,7 @@ pub fn save_jobs(jobs: &[PersistedJob]) -> Result<()> {
 }
 
 pub fn load_jobs_from(path: &Path) -> LoadJobs {
+    recover_incomplete_save(path);
     if !path.exists() {
         return LoadJobs::Empty;
     }
@@ -233,11 +234,40 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, bytes).with_context(|| format!("failed to write {}", tmp.display()))?;
-    if path.exists() {
-        let _ = std::fs::remove_file(path);
+    replace_file(&tmp, path)
+}
+
+/// POSIX rename replaces. Windows cannot rename over an existing file, so the
+/// live file is moved aside only for that replace, then restored if the new
+/// name fails. Never unlink the live file first.
+fn replace_file(from: &Path, to: &Path) -> Result<()> {
+    if cfg!(windows) && to.exists() {
+        let backup = to.with_extension("json.prev");
+        let _ = std::fs::remove_file(&backup);
+        std::fs::rename(to, &backup)
+            .with_context(|| format!("failed to move aside {}", to.display()))?;
+        if let Err(error) = std::fs::rename(from, to) {
+            let _ = std::fs::rename(&backup, to);
+            return Err(error).with_context(|| format!("failed to replace {}", to.display()));
+        }
+        let _ = std::fs::remove_file(&backup);
+        return Ok(());
     }
-    std::fs::rename(&tmp, path).with_context(|| format!("failed to replace {}", path.display()))?;
-    Ok(())
+    std::fs::rename(from, to).with_context(|| format!("failed to replace {}", to.display()))
+}
+
+fn recover_incomplete_save(path: &Path) {
+    if path.exists() {
+        return;
+    }
+    for aside in [
+        path.with_extension("json.tmp"),
+        path.with_extension("json.prev"),
+    ] {
+        if aside.exists() && std::fs::rename(&aside, path).is_ok() {
+            return;
+        }
+    }
 }
 
 fn quarantine(path: &Path) {
@@ -289,6 +319,39 @@ mod tests {
         assert_eq!(parsed.jobs[0].id, 2);
         assert!(!parsed.jobs[0].paused);
         assert_eq!(parsed.jobs[0].downloaded, 0);
+    }
+
+    #[test]
+    fn replace_keeps_live_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("jobs.json");
+        let first = sample("magnet", "downloading", 10);
+        save_jobs_to(&path, std::slice::from_ref(&first)).unwrap();
+        assert!(path.exists());
+        let second = sample("http", "queued", 0);
+        save_jobs_to(&path, std::slice::from_ref(&second)).unwrap();
+        assert!(path.exists());
+        assert!(!path.with_extension("json.tmp").exists());
+        match load_jobs_from(&path) {
+            LoadJobs::Loaded(jobs) => assert_eq!(jobs, vec![second]),
+            other => panic!("expected loaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_recovers_tmp_when_live_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("jobs.json");
+        let job = sample("magnet", "paused", 10);
+        save_jobs_to(&path, std::slice::from_ref(&job)).unwrap();
+        std::fs::rename(&path, path.with_extension("json.tmp")).unwrap();
+        assert!(!path.exists());
+        match load_jobs_from(&path) {
+            LoadJobs::Loaded(jobs) => assert_eq!(jobs, vec![job]),
+            other => panic!("expected recovered, got {other:?}"),
+        }
+        assert!(path.exists());
+        assert!(!path.with_extension("json.tmp").exists());
     }
 
     #[test]

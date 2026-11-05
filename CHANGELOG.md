@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
 - Closing the GUI still drops live torrent sessions; share-mode rows that were seeding start seeding again after the restore probe
 - Title click still opens that row’s dest (not the folder used for new START jobs)
 
+### Fixed
+
+- Restored paused magnets pause librqbit before the control loop (in-session pause also reaches `session.pause` instead of blocking on `wait_while_paused` first)
+- `jobs.json` is replaced by rename, not unlink-then-rename; a leftover `.tmp` / `.prev` is recovered if the live file is missing
+
 ## [3.3.0] - 2026-10-31
 
 ### Added

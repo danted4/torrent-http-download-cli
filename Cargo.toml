@@ -11,7 +11,7 @@ rust-version = "1.85"
 
 [features]
 default = []
-gui = ["dep:eframe", "dep:rfd", "dep:open"]
+gui = ["dep:eframe", "dep:rfd", "dep:open", "dep:winit"]
 macos-app = []
 
 [dependencies]
@@ -34,6 +34,8 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
+# eframe 0.31 does not re-export `winit/default`; this unifies CSD (`sctk-adwaita`) while AccessKit stays off.
+winit = { version = "0.30", optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

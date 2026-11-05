@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- Updater retries GitHub 502/503/504 (and connect/read timeouts) when fetching `SHA256SUMS` or the binary
+- Linux GUI: set Wayland/X11 app id `torrenter`, skip AccessKit, and do not vsync-block so compositor pings are answered (Wayland client decorations stay via winit’s defaults)
+
 ## [3.4.1] - 2026-11-05
 
 ### Changed

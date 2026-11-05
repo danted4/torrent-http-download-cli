@@ -328,10 +328,15 @@ pub fn run() -> eframe::Result<()> {
     update::cleanup_replaced_binary();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_app_id("torrenter")
             .with_title(identity::banner())
             .with_inner_size([960.0, 580.0])
             .with_min_inner_size([760.0, 440.0])
             .with_icon(crate::icon::app_icon()),
+        // Hyprland (and other Linux compositors) ping the GUI thread. vsync
+        // can block that thread in swap buffers so the ping is missed and the
+        // shell shows "Application Not Responding".
+        vsync: !cfg!(target_os = "linux"),
         ..Default::default()
     };
     eframe::run_native(

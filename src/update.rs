@@ -15,6 +15,8 @@ const LATEST_URL: &str = "https://api.github.com/repos/danted4/torrenter/release
 const CHECKSUMS_NAME: &str = "SHA256SUMS";
 const MAX_UPDATE_BYTES: u64 = 80 * 1024 * 1024;
 const MAX_CHECKSUMS_BYTES: u64 = 64 * 1024;
+const UPDATE_DOWNLOAD_ATTEMPTS: u32 = 4;
+const UPDATE_RETRY_BASE: Duration = Duration::from_millis(400);
 
 fn default_true() -> bool {
     true
@@ -514,6 +516,28 @@ pub async fn install_update(update: &AvailableUpdate) -> Result<PathBuf> {
     install
 }
 
+fn is_retryable_status(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::BAD_GATEWAY
+            | StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::GATEWAY_TIMEOUT
+            | StatusCode::TOO_MANY_REQUESTS
+    )
+}
+
+fn is_retryable_reqwest(error: &reqwest::Error) -> bool {
+    error.is_timeout() || error.is_connect() || error.status().is_some_and(is_retryable_status)
+}
+
+fn is_retryable_download(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<reqwest::Error>()
+            .is_some_and(is_retryable_reqwest)
+    })
+}
+
 async fn download_to_file(
     url: &str,
     dest: &Path,
@@ -521,20 +545,51 @@ async fn download_to_file(
     tag: &str,
     asset_name: &str,
 ) -> Result<()> {
-    use futures_util::StreamExt;
-
     if !is_repo_release_asset_url(url, tag, asset_name) {
         bail!("refusing to download update from {url}");
     }
     // GitHub 302s this pinned github.com URL to objects.githubusercontent.com.
     // Following that redirect is required; the first hop is what we pin.
     let client = update_client()?;
-    let response = client
-        .get(url)
-        .send()
-        .await?
-        .error_for_status()
-        .context("failed to download release asset")?;
+    let mut last_error = None;
+    for attempt in 0..UPDATE_DOWNLOAD_ATTEMPTS {
+        match download_to_file_once(&client, url, dest, max_bytes).await {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if attempt + 1 < UPDATE_DOWNLOAD_ATTEMPTS && is_retryable_download(&error) =>
+            {
+                last_error = Some(error);
+                let _ = tokio::fs::remove_file(dest).await;
+                tokio::time::sleep(UPDATE_RETRY_BASE * (1 << attempt)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("failed to download release asset")))
+}
+
+async fn download_to_file_once(
+    client: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+    max_bytes: u64,
+) -> Result<()> {
+    use futures_util::StreamExt;
+
+    let response = match client.get(url).send().await {
+        Ok(response) => response,
+        Err(error) if is_retryable_reqwest(&error) => return Err(error.into()),
+        Err(error) => {
+            return Err(anyhow::Error::from(error).context("failed to download release asset"));
+        }
+    };
+    let response = match response.error_for_status() {
+        Ok(response) => response,
+        Err(error) if is_retryable_reqwest(&error) => return Err(error.into()),
+        Err(error) => {
+            return Err(anyhow::Error::from(error).context("failed to download release asset"));
+        }
+    };
     if let Some(len) = response.content_length() {
         if len > max_bytes {
             bail!("update asset is too large ({len} bytes)");
@@ -850,6 +905,16 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *torrenter-gui-
         let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         assert!(hashes_match(hash, &hash.to_ascii_uppercase()));
         assert!(!hashes_match(hash, &hash.replace('0', "1")));
+    }
+
+    #[test]
+    fn retries_github_cdn_gateway_failures() {
+        assert!(is_retryable_status(StatusCode::GATEWAY_TIMEOUT));
+        assert!(is_retryable_status(StatusCode::BAD_GATEWAY));
+        assert!(is_retryable_status(StatusCode::SERVICE_UNAVAILABLE));
+        assert!(!is_retryable_status(StatusCode::NOT_FOUND));
+        assert!(!is_retryable_status(StatusCode::FORBIDDEN));
+        assert_eq!(UPDATE_DOWNLOAD_ATTEMPTS, 4);
     }
 
     #[test]

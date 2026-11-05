@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- Linux GUI **restart now** after an in-app update spawns a new process (and ignores a `(deleted)` `/proc/self/exe` path) instead of `exec` into the old Wayland/GL session
+
 ## [3.4.2] - 2026-11-05
 
 ### Fixed

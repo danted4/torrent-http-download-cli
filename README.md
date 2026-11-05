@@ -149,9 +149,9 @@ Single-stream HTTP **does not resume**. It truncates the destination and starts 
 
 HTTP pause aborts the live Range body and continues from `<dest>/.resume/` on resume. Pause on a single-stream (no Range) download starts that GET over. Stop is honored during HEAD, range probe, part copy, and merge.
 
-Torrent mode uses DHT in memory only. **Share** (default, `seed: on`) uploads while downloading, opens an incoming TCP listen on a random high port, and stays connected after 100% until you press `2` or quit — `torrenter magnet` will not return when the file is complete. **Leech** (`seed: off`) never uploads and calls `session.stop()` at 100%. Each magnet writes into `<dest>/<torrent-name>/` (whitespace becomes `_`). If the magnet has no name, or that folder belongs to a different info-hash, the folder is the hash (or `name_hash`). Overwrite is allowed only inside that folder so a retry can resume. Closing the CLI or GUI drops every seed.
+Torrent mode uses DHT in memory only. **Share** (default, `seed: on`) uploads while downloading, opens an incoming TCP listen on a random high port, and stays connected after 100% until you press `2` or quit — `torrenter magnet` will not return when the file is complete. **Leech** (`seed: off`) never uploads and calls `session.stop()` at 100%. Each magnet writes into `<dest>/<torrent-name>/` (whitespace becomes `_`). If the magnet has no name, or that folder belongs to a different info-hash, the folder is the hash (or `name_hash`). Overwrite is allowed only inside that folder so a retry can resume. Closing the CLI drops every seed. Closing the GUI drops live sessions too, then restores the job list on the next launch (share rows that were seeding start seeding again if their files are still in that row’s dest).
 
-The GUI uses the same engines: phosphor / amber / ice (last pick saved), magnet/HTTP swap on the URL row, share/leech glyphs, dest path, pause / stop / clear per row. **Stop** immediately shows **clear** (and **restart**). Click a job title to open that job’s folder. Idle rows use **restart** (confirm popup with original mode and dest). Search filters jobs (`Esc` clears). At most four downloads run at once; the same magnet or HTTP URL cannot start twice while it is already active. The window must stay open to keep seeding.
+The GUI uses the same engines: phosphor / amber / ice (last pick saved), magnet/HTTP swap on the URL row, share/leech glyphs, dest path, pause / stop / clear per row. **Stop** immediately shows **clear** (and **restart**). Click a job title to open **that row’s** folder (the dest saved on the job, not the folder used for new START jobs). Idle rows use **restart** (confirm popup with mode, dest, and share/leech). Search filters jobs (`Esc` clears). At most four downloads run at once; the same magnet or HTTP URL cannot start twice while it is already active. The job list is saved across launches (`jobs.json`). Live rows continue after a dest check (paused rows start paused and still count toward the 4-run cap). A >0% magnet whose files were moved/deleted, or a live HTTP job without `.resume` parts, comes back stopped. Seeding still needs the window open; it resumes on the next launch if that row was left seeding.
 
 ## Updates
 
@@ -228,6 +228,7 @@ HTTP resume keeps `{sha256(url)[0..16]}.part-N` plus a small JSON manifest under
 - Progress format: `BAR_TEMPLATE` in `src/progress.rs`
 - HTTP and updater timeouts: 20s connect, 60s between reads
 - Auto-update, magnet seed, GUI `theme`, and optional `download_dir`: `~/.config/torrenter/config.json` (macOS: `~/Library/Application Support/torrenter/config.json`, Windows: `%APPDATA%\torrenter\config.json`). `seed` defaults to on. `theme` is `phosphor`, `amber`, or `ice` (default phosphor). Missing `download_dir` keeps following the live OS Downloads path.
+- GUI job list: `jobs.json` in that same folder. Each row keeps its own dest and share/leech. Corrupt files are moved to `jobs.json.bak`.
 
 ## Development
 
@@ -265,6 +266,8 @@ Release: `git tag vX.Y.Z && git push origin vX.Y.Z` (commit must already be on `
 | Resume not working (HTTP) | Same URL and same dest folder; state is in `<dest>/.resume/` |
 | Incomplete part | Server closed a Range early; retry the same URL |
 | Linux GUI missing GTK/xcb | Install GTK 3 and xcb (see [Linux](#linux)) |
+| GUI list empty after restart | Jobs live in `jobs.json` next to `config.json`; a corrupt file is renamed `jobs.json.bak` |
+| Saved row says files missing | Payload is gone from **that row’s** dest; Restart starts over there, or Clear drops the row |
 | GUI says already downloading | Same magnet info-hash or HTTP URL is already active |
 | Auto-update did nothing in a script | Startup check is TTY-only; use `torrenter update` |
 | Update hash / URL refused | Asset must be this repo’s release for that tag, with a matching `SHA256SUMS` line |

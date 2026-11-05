@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## [3.4.0] - 2026-11-05
+
+### Added
+
+- GUI job list is stored in `jobs.json` (beside `config.json`) and restored on the next launch in the last live state (queued / downloading / paused / seeding), still capped at 4 running jobs
+- Startup checks each row’s own dest: missing payload on a >0% magnet, or a live HTTP job without usable `.resume` parts, stays stopped until Restart or Clear
+
+### Changed
+
+- Closing the GUI still drops live torrent sessions; share-mode rows that were seeding start seeding again after the restore probe
+- Title click still opens that row’s dest (not the folder used for new START jobs)
+
+### Fixed
+
+- Restored paused magnets pause librqbit before the control loop (in-session pause also reaches `session.pause` instead of blocking on `wait_while_paused` first)
+- `jobs.json` is replaced by rename, not unlink-then-rename; a leftover `.tmp` / `.prev` is recovered if the live file is missing
+- Restored in-progress rows no longer flash a full bar (`ProgressHandle` was writing total=1 over saved size); the bar slides until the engine reports real progress (~50ms cadence, not an unbounded repaint)
+
 ## [3.3.0] - 2026-10-31
 
 ### Added

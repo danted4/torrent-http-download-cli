@@ -156,6 +156,21 @@ impl JobSnapshot {
         self.set_status("stopped");
     }
 
+    pub fn mark_stopped_with(&self, message: impl Into<String>) {
+        *mutex_lock(&self.error) = Some(message.into());
+        self.mark_stopped();
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        if !self.is_active() {
+            return;
+        }
+        self.paused.store(paused, Ordering::Relaxed);
+        if paused {
+            self.set_status("paused");
+        }
+    }
+
     pub fn title(&self) -> String {
         mutex_lock(&self.title).clone()
     }
@@ -319,8 +334,14 @@ impl ProgressHandle {
     }
 
     pub fn gui(total: u64, snapshot: Arc<JobSnapshot>) -> Self {
-        let bar = hidden_bar(total.max(1));
-        snapshot.total.store(total, Ordering::Relaxed);
+        let downloaded = snapshot.downloaded.load(Ordering::Relaxed);
+        let snap_total = snapshot.total.load(Ordering::Relaxed);
+        let length = snap_total.max(total).max(1);
+        let bar = hidden_bar(length);
+        bar.set_position(downloaded.min(length));
+        if snap_total == 0 && total > 1 {
+            snapshot.total.store(total, Ordering::Relaxed);
+        }
         Self {
             bar,
             snapshot: Some(snapshot),
@@ -597,6 +618,44 @@ mod tests {
         snapshot.mark_stopped();
         assert!(!snapshot.is_done());
         assert!(snapshot.is_stopped());
+    }
+
+    #[test]
+    fn set_paused_and_stopped_with_message() {
+        let snapshot = JobSnapshot::default();
+        snapshot.set_paused(true);
+        assert!(snapshot.is_paused());
+        assert_eq!(snapshot.status(), "paused");
+        snapshot.mark_stopped_with("files missing from download folder");
+        assert!(snapshot.is_stopped());
+        assert!(!snapshot.is_paused());
+        assert_eq!(
+            snapshot.error().as_deref(),
+            Some("files missing from download folder")
+        );
+        assert_eq!(snapshot.status(), "stopped");
+    }
+
+    #[test]
+    fn gui_handle_keeps_restored_totals() {
+        let snapshot = Arc::new(JobSnapshot::default());
+        snapshot
+            .downloaded
+            .store(25, std::sync::atomic::Ordering::Relaxed);
+        snapshot
+            .total
+            .store(100, std::sync::atomic::Ordering::Relaxed);
+        let _handle = ProgressHandle::gui(1, Arc::clone(&snapshot));
+        assert_eq!(
+            snapshot
+                .downloaded
+                .load(std::sync::atomic::Ordering::Relaxed),
+            25
+        );
+        assert_eq!(
+            snapshot.total.load(std::sync::atomic::Ordering::Relaxed),
+            100
+        );
     }
 
     #[test]

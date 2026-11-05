@@ -10,7 +10,7 @@ use librqbit::{
     AddTorrent, AddTorrentOptions, DhtSessionConfig, ListenerOptions, Session, SessionOptions,
 };
 
-use crate::progress::{honor_control, is_stopped, watch_cli_controls, JobSnapshot, ProgressHandle};
+use crate::progress::{check_stop, is_stopped, watch_cli_controls, JobSnapshot, ProgressHandle};
 use crate::validate::is_valid_magnet_url;
 
 fn magnet_folder_lock(hash: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -150,6 +150,49 @@ fn magnet_folder_base(magnet_uri: &str) -> Option<(String, String)> {
     Some((base, hash))
 }
 
+pub fn magnet_payload_present(dest: &Path, magnet_uri: &str) -> bool {
+    let Some(name) = magnet_sub_folder(dest, magnet_uri) else {
+        return false;
+    };
+    folder_has_payload(&dest.join(name))
+}
+
+fn folder_has_payload(root: &Path) -> bool {
+    const MAX_DIRS: usize = 256;
+    const MAX_ENTRIES: usize = 4096;
+    let mut pending = vec![root.to_path_buf()];
+    let mut dirs = 0usize;
+    let mut entries = 0usize;
+    while let Some(dir) = pending.pop() {
+        dirs += 1;
+        if dirs > MAX_DIRS {
+            return false;
+        }
+        let Ok(read) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in read.flatten() {
+            entries += 1;
+            if entries > MAX_ENTRIES {
+                return false;
+            }
+            if entry.file_name() == HASH_MARKER {
+                continue;
+            }
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_file() {
+                return true;
+            }
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    false
+}
+
 pub fn magnet_sub_folder(dest: &Path, magnet_uri: &str) -> Option<String> {
     let (base, hash) = magnet_folder_base(magnet_uri)?;
     folder_candidates(&base, &hash)
@@ -218,7 +261,9 @@ pub async fn start_download_with(
     let info_hash = magnet_info_hash(magnet_uri).context("magnet has no info hash")?;
     let folder_lock = magnet_folder_lock(&info_hash);
     let _folder = folder_lock.lock().await;
-    progress.set_message("Initializing torrent client & verifying data...");
+    if !progress.is_paused() {
+        progress.set_message("Initializing torrent client & verifying data...");
+    }
 
     // Compilation torrents open many files at once; macOS defaults are often 256.
     let _ = librqbit::try_increase_nofile_limit();
@@ -296,6 +341,10 @@ async fn run_torrent(
         progress.set_title(name);
     }
 
+    if !progress.is_paused() {
+        progress.set_status("downloading");
+    }
+
     if progress.announce() {
         println!("\nTorrent is downloading...\n");
         if let Some(snapshot) = progress.snapshot() {
@@ -308,7 +357,15 @@ async fn run_torrent(
         println!("[1] pause/resume   [2] stop\n");
     }
     progress.set_message("0");
-    progress.set_status("downloading");
+
+    let mut engine_paused = false;
+    if progress.is_paused() {
+        session
+            .pause(&handle)
+            .await
+            .context("failed to pause torrent")?;
+        engine_paused = true;
+    }
 
     let completed = handle.wait_until_completed();
     tokio::pin!(completed);
@@ -325,7 +382,6 @@ async fn run_torrent(
     };
     tokio::pin!(controls);
 
-    let mut engine_paused = false;
     let mut download_done = false;
     loop {
         tokio::select! {
@@ -342,6 +398,9 @@ async fn run_torrent(
                 let (peers, uploaded, up_speed) = live_peers_and_upload(&stats);
                 progress.set_uploaded(uploaded);
                 progress.set_upload_bps(up_speed);
+                if progress.is_paused() {
+                    continue;
+                }
                 if !seed {
                     progress.finish();
                     if progress.announce() {
@@ -362,7 +421,7 @@ async fn run_torrent(
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(200)) => {
-                if let Err(error) = honor_control(progress.snapshot().map(Arc::as_ref)).await {
+                if let Err(error) = check_stop(progress.snapshot().map(Arc::as_ref)) {
                     if is_stopped(&error) {
                         if let Some(snapshot) = progress.snapshot() {
                             snapshot.mark_stopped();
@@ -392,6 +451,13 @@ async fn run_torrent(
                 if let Some(error) = stats.error {
                     progress.finish_and_clear();
                     bail!("{error}");
+                }
+                if !want_pause && download_done && !seed {
+                    progress.finish();
+                    if progress.announce() {
+                        println!("\nTorrent download finished!");
+                    }
+                    return Ok(());
                 }
                 if !want_pause && (!stats.finished || seed) {
                     let total = stats.total_bytes.max(1);
@@ -569,5 +635,25 @@ mod tests {
             magnet_sub_folder(dir.path(), &magnet).as_deref(),
             Some(hash)
         );
+    }
+
+    #[test]
+    fn payload_present_ignores_marker_only_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let hash = "08ada5a7a6183aae1e09d831df6748d566095a10";
+        let magnet = format!("magnet:?xt=urn:btih:{hash}&dn=Sintel");
+        let folder = claim_magnet_sub_folder(dir.path(), &magnet).unwrap();
+        assert!(!magnet_payload_present(dir.path(), &magnet));
+        std::fs::write(dir.path().join(&folder).join("movie.mkv"), b"data").unwrap();
+        assert!(magnet_payload_present(dir.path(), &magnet));
+        let nested = dir.path().join(&folder).join("inner");
+        std::fs::remove_file(dir.path().join(&folder).join("movie.mkv")).unwrap();
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(nested.join("clip.bin"), b"x").unwrap();
+        assert!(magnet_payload_present(dir.path(), &magnet));
+        assert!(!magnet_payload_present(
+            dir.path(),
+            "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
     }
 }

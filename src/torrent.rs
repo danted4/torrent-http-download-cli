@@ -150,6 +150,49 @@ fn magnet_folder_base(magnet_uri: &str) -> Option<(String, String)> {
     Some((base, hash))
 }
 
+pub fn magnet_payload_present(dest: &Path, magnet_uri: &str) -> bool {
+    let Some(name) = magnet_sub_folder(dest, magnet_uri) else {
+        return false;
+    };
+    folder_has_payload(&dest.join(name))
+}
+
+fn folder_has_payload(root: &Path) -> bool {
+    const MAX_DIRS: usize = 256;
+    const MAX_ENTRIES: usize = 4096;
+    let mut pending = vec![root.to_path_buf()];
+    let mut dirs = 0usize;
+    let mut entries = 0usize;
+    while let Some(dir) = pending.pop() {
+        dirs += 1;
+        if dirs > MAX_DIRS {
+            return false;
+        }
+        let Ok(read) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in read.flatten() {
+            entries += 1;
+            if entries > MAX_ENTRIES {
+                return false;
+            }
+            if entry.file_name() == HASH_MARKER {
+                continue;
+            }
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_file() {
+                return true;
+            }
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    false
+}
+
 pub fn magnet_sub_folder(dest: &Path, magnet_uri: &str) -> Option<String> {
     let (base, hash) = magnet_folder_base(magnet_uri)?;
     folder_candidates(&base, &hash)
@@ -296,6 +339,10 @@ async fn run_torrent(
         progress.set_title(name);
     }
 
+    if !progress.is_paused() {
+        progress.set_status("downloading");
+    }
+
     if progress.announce() {
         println!("\nTorrent is downloading...\n");
         if let Some(snapshot) = progress.snapshot() {
@@ -308,7 +355,6 @@ async fn run_torrent(
         println!("[1] pause/resume   [2] stop\n");
     }
     progress.set_message("0");
-    progress.set_status("downloading");
 
     let completed = handle.wait_until_completed();
     tokio::pin!(completed);
@@ -569,5 +615,25 @@ mod tests {
             magnet_sub_folder(dir.path(), &magnet).as_deref(),
             Some(hash)
         );
+    }
+
+    #[test]
+    fn payload_present_ignores_marker_only_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let hash = "08ada5a7a6183aae1e09d831df6748d566095a10";
+        let magnet = format!("magnet:?xt=urn:btih:{hash}&dn=Sintel");
+        let folder = claim_magnet_sub_folder(dir.path(), &magnet).unwrap();
+        assert!(!magnet_payload_present(dir.path(), &magnet));
+        std::fs::write(dir.path().join(&folder).join("movie.mkv"), b"data").unwrap();
+        assert!(magnet_payload_present(dir.path(), &magnet));
+        let nested = dir.path().join(&folder).join("inner");
+        std::fs::remove_file(dir.path().join(&folder).join("movie.mkv")).unwrap();
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(nested.join("clip.bin"), b"x").unwrap();
+        assert!(magnet_payload_present(dir.path(), &magnet));
+        assert!(!magnet_payload_present(
+            dir.path(),
+            "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
     }
 }

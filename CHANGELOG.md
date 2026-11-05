@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [3.4.0] - 2026-11-05
+
+### Added
+
+- GUI job list is stored in `jobs.json` (beside `config.json`) and restored on the next launch in the last live state (queued / downloading / paused / seeding), still capped at 4 running jobs
+- Startup checks each row’s own dest: missing payload on a >0% magnet, or a live HTTP job without usable `.resume` parts, stays stopped until Restart or Clear
+
+### Changed
+
+- Closing the GUI still drops live torrent sessions; share-mode rows that were seeding start seeding again after the restore probe
+- Title click still opens that row’s dest (not the folder used for new START jobs)
+
 ## [3.3.0] - 2026-10-31
 
 ### Added

@@ -1,5 +1,6 @@
 pub mod http;
 pub mod identity;
+pub mod jobs;
 pub mod paths;
 pub mod progress;
 pub mod torrent;

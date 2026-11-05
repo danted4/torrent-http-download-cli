@@ -352,6 +352,40 @@ fn part_range(index: usize, part_size: u64, total: u64) -> Option<(u64, u64, u64
     Some((start, end, end - start + 1))
 }
 
+/// True when dest/.resume has a matching manifest and at least one part with bytes.
+pub fn http_resume_present(dest: &Path, download_url: &str) -> bool {
+    let layout = DownloadLayout::in_dir(dest.to_path_buf());
+    let key = resume_key(download_url);
+    let Ok(bytes) = std::fs::read(manifest_path(&layout, &key)) else {
+        return false;
+    };
+    let Ok(manifest) = serde_json::from_slice::<ResumeManifest>(&bytes) else {
+        return false;
+    };
+    if manifest.url != download_url {
+        return false;
+    }
+    (0..manifest.part_count).any(|index| {
+        std::fs::metadata(part_path(&layout, &key, index))
+            .map(|meta| meta.len() > 0)
+            .unwrap_or(false)
+    })
+}
+
+pub fn http_output_present(dest: &Path, filename: &str) -> bool {
+    let name = Path::new(filename);
+    if filename.is_empty() || name.components().count() != 1 {
+        return false;
+    }
+    std::fs::metadata(dest.join(name))
+        .map(|meta| meta.is_file() && meta.len() > 0)
+        .unwrap_or(false)
+}
+
+pub fn http_payload_present(dest: &Path, download_url: &str, filename: &str) -> bool {
+    http_resume_present(dest, download_url) || http_output_present(dest, filename)
+}
+
 fn resume_key(download_url: &str) -> String {
     let digest = Sha256::digest(download_url.as_bytes());
     digest
@@ -981,6 +1015,37 @@ mod tests {
             resume_key("https://example/a"),
             resume_key("https://example/b")
         );
+    }
+
+    #[test]
+    fn http_presence_resume_parts_and_final_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path();
+        let url = "https://example.com/file.bin";
+        assert!(!http_resume_present(dest, url));
+        assert!(!http_output_present(dest, "file.bin"));
+        assert!(!http_payload_present(dest, url, "file.bin"));
+        let layout = DownloadLayout::in_dir(dest.to_path_buf());
+        let key = resume_key(url);
+        std::fs::create_dir_all(resume_directory(&layout)).unwrap();
+        let manifest = ResumeManifest {
+            url: url.into(),
+            size: 10,
+            part_count: 4,
+            filename: "file.bin".into(),
+        };
+        std::fs::write(
+            manifest_path(&layout, &key),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        assert!(!http_resume_present(dest, url));
+        std::fs::write(part_path(&layout, &key, 0), b"hello").unwrap();
+        assert!(http_resume_present(dest, url));
+        assert!(http_payload_present(dest, url, "other.bin"));
+        std::fs::write(dest.join("file.bin"), b"done").unwrap();
+        assert!(http_output_present(dest, "file.bin"));
+        assert!(!http_output_present(dest, "../escape.bin"));
     }
 
     #[tokio::test]

@@ -156,6 +156,21 @@ impl JobSnapshot {
         self.set_status("stopped");
     }
 
+    pub fn mark_stopped_with(&self, message: impl Into<String>) {
+        *mutex_lock(&self.error) = Some(message.into());
+        self.mark_stopped();
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        if !self.is_active() {
+            return;
+        }
+        self.paused.store(paused, Ordering::Relaxed);
+        if paused {
+            self.set_status("paused");
+        }
+    }
+
     pub fn title(&self) -> String {
         mutex_lock(&self.title).clone()
     }
@@ -597,6 +612,22 @@ mod tests {
         snapshot.mark_stopped();
         assert!(!snapshot.is_done());
         assert!(snapshot.is_stopped());
+    }
+
+    #[test]
+    fn set_paused_and_stopped_with_message() {
+        let snapshot = JobSnapshot::default();
+        snapshot.set_paused(true);
+        assert!(snapshot.is_paused());
+        assert_eq!(snapshot.status(), "paused");
+        snapshot.mark_stopped_with("files missing from download folder");
+        assert!(snapshot.is_stopped());
+        assert!(!snapshot.is_paused());
+        assert_eq!(
+            snapshot.error().as_deref(),
+            Some("files missing from download folder")
+        );
+        assert_eq!(snapshot.status(), "stopped");
     }
 
     #[test]

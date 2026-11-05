@@ -93,7 +93,7 @@ fn paint_job_progress(ui: &mut egui::Ui, accent: Color32, track: Color32, fracti
         fill.set_width(rect.width() * fraction);
         fill
     } else {
-        ui.ctx().request_repaint();
+        ui.ctx().request_repaint_after(SLIDER_REPAINT);
         let t = ui.input(|input| input.time) as f32;
         let span = 0.28;
         let start = (t * 0.85).fract() * (1.0 - span);
@@ -225,6 +225,7 @@ const NO_UPDATES: &str = "no updates found";
 const STATUS_HOLD: Duration = Duration::from_millis(1500);
 const FAIL_HOLD: Duration = Duration::from_secs(5);
 const PERSIST_EVERY: Duration = Duration::from_secs(2);
+const SLIDER_REPAINT: Duration = Duration::from_millis(50);
 
 enum WorkerCmd {
     Download {
@@ -2054,6 +2055,7 @@ mod tests {
         assert_eq!(job_bar_fraction("downloading", 25, 100), Some(0.25));
         assert_eq!(job_bar_fraction("paused", 25, 100), Some(0.25));
         assert_eq!(job_bar_fraction("downloading", 0, 0), Some(0.0));
+        assert_eq!(SLIDER_REPAINT, Duration::from_millis(50));
     }
 
     #[test]

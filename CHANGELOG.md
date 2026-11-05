@@ -18,7 +18,7 @@ All notable changes to this project are documented here.
 
 - Restored paused magnets pause librqbit before the control loop (in-session pause also reaches `session.pause` instead of blocking on `wait_while_paused` first)
 - `jobs.json` is replaced by rename, not unlink-then-rename; a leftover `.tmp` / `.prev` is recovered if the live file is missing
-- Restored in-progress rows no longer flash a full bar (`ProgressHandle` was writing total=1 over saved size); the bar slides until the engine reports real progress
+- Restored in-progress rows no longer flash a full bar (`ProgressHandle` was writing total=1 over saved size); the bar slides until the engine reports real progress (~50ms cadence, not an unbounded repaint)
 
 ## [3.3.0] - 2026-10-31
 

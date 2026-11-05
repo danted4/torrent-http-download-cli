@@ -1003,7 +1003,9 @@ impl eframe::App for GuiApp {
                                             .button(mono("restart now", 12.0, palette.fg))
                                             .clicked()
                                         {
-                                            let _ = update::relaunch();
+                                            if let Err(error) = update::relaunch() {
+                                                self.toast_fail(format!("{error:#}"));
+                                            }
                                         }
                                     },
                                 );

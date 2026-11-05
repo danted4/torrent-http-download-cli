@@ -144,11 +144,31 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
 }
 
 pub fn cleanup_replaced_binary() {
-    if let Ok(current) = std::env::current_exe() {
+    if let Ok(current) = running_exe_path() {
         for path in leftover_update_paths(&current) {
             let _ = std::fs::remove_file(path);
         }
     }
+}
+
+/// Linux `/proc/self/exe` grows a ` (deleted)` suffix after we rename a new
+/// binary over the running file. Strip it so relaunch/cleanup hit the live path.
+fn without_linux_deleted_marker(path: &Path) -> PathBuf {
+    const MARKER: &str = " (deleted)";
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return path.to_path_buf();
+    };
+    let Some(stripped) = name.strip_suffix(MARKER) else {
+        return path.to_path_buf();
+    };
+    let mut out = path.to_path_buf();
+    out.set_file_name(stripped);
+    out
+}
+
+fn running_exe_path() -> Result<PathBuf> {
+    let exe = std::env::current_exe().context("cannot locate current executable")?;
+    Ok(without_linux_deleted_marker(&exe))
 }
 
 fn leftover_update_paths(current: &Path) -> Vec<PathBuf> {
@@ -454,7 +474,7 @@ pub async fn install_update(update: &AvailableUpdate) -> Result<PathBuf> {
     if !is_pinned_update(update) {
         bail!("refusing to install an update from outside danted4/torrenter");
     }
-    let current = std::env::current_exe().context("cannot locate current executable")?;
+    let current = running_exe_path()?;
     let tmp = current.with_file_name(format!(
         ".{}.update",
         current
@@ -648,9 +668,19 @@ fn replace_executable(current: &Path, new_path: &Path) -> Result<()> {
 }
 
 pub fn relaunch() -> Result<()> {
-    let exe = std::env::current_exe()?;
+    let exe = running_exe_path()?;
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-    #[cfg(unix)]
+    // Linux: exec() keeps the old Wayland/X11/GL fds and often targets a
+    // `(deleted)` path after rename-over. Spawn a new process, then exit.
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new(&exe)
+            .args(args)
+            .spawn()
+            .with_context(|| format!("failed to relaunch {}", exe.display()))?;
+        std::process::exit(0);
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
     {
         use std::os::unix::process::CommandExt;
         let error = std::process::Command::new(&exe).args(args).exec();
@@ -915,6 +945,18 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *torrenter-gui-
         assert!(!is_retryable_status(StatusCode::NOT_FOUND));
         assert!(!is_retryable_status(StatusCode::FORBIDDEN));
         assert_eq!(UPDATE_DOWNLOAD_ATTEMPTS, 4);
+    }
+
+    #[test]
+    fn strips_linux_deleted_marker_from_proc_exe() {
+        assert_eq!(
+            without_linux_deleted_marker(Path::new("/opt/torrenter-gui (deleted)")),
+            PathBuf::from("/opt/torrenter-gui")
+        );
+        assert_eq!(
+            without_linux_deleted_marker(Path::new("/opt/torrenter-gui")),
+            PathBuf::from("/opt/torrenter-gui")
+        );
     }
 
     #[test]

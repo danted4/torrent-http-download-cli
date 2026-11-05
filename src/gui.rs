@@ -65,6 +65,48 @@ fn mix_rgb(a: Color32, b: Color32, toward_b: f32) -> Color32 {
     )
 }
 
+fn progress_is_indeterminate(status: &str) -> bool {
+    matches!(status, "queued" | "starting")
+        || status.contains("Initializing")
+        || status.contains("verifying")
+}
+
+fn job_bar_fraction(status: &str, downloaded: u64, total: u64) -> Option<f32> {
+    if progress_is_indeterminate(status) {
+        return None;
+    }
+    if total <= 1 && downloaded > total {
+        return None;
+    }
+    if total == 0 {
+        return Some(0.0);
+    }
+    Some((downloaded as f32 / total as f32).clamp(0.0, 1.0))
+}
+
+fn paint_job_progress(ui: &mut egui::Ui, accent: Color32, track: Color32, fraction: Option<f32>) {
+    let desired = egui::vec2(ui.available_width(), 8.0);
+    let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
+    ui.painter().rect_filled(rect, 2.0, track);
+    let fill = if let Some(fraction) = fraction {
+        let mut fill = rect;
+        fill.set_width(rect.width() * fraction);
+        fill
+    } else {
+        ui.ctx().request_repaint();
+        let t = ui.input(|input| input.time) as f32;
+        let span = 0.28;
+        let start = (t * 0.85).fract() * (1.0 - span);
+        let mut fill = rect;
+        fill.min.x += rect.width() * start;
+        fill.set_width(rect.width() * span);
+        fill
+    };
+    if fill.width() > 0.5 {
+        ui.painter().rect_filled(fill, 2.0, accent);
+    }
+}
+
 fn row_accent(palette: Theme, settled: bool) -> Color32 {
     if settled {
         palette.fg
@@ -1188,19 +1230,8 @@ impl eframe::App for GuiApp {
                                         },
                                     );
                                 });
-                                let fraction = if total > 0 {
-                                    downloaded as f32 / total as f32
-                                } else {
-                                    0.0
-                                };
-                                ui.scope(|ui| {
-                                    ui.visuals_mut().selection.bg_fill = accent;
-                                    ui.add(
-                                        egui::ProgressBar::new(fraction.clamp(0.0, 1.0))
-                                            .desired_height(8.0)
-                                            .fill(accent),
-                                    );
-                                });
+                                let fraction = job_bar_fraction(&status, downloaded, total);
+                                paint_job_progress(ui, accent, palette.row_alt, fraction);
                                 let eta = if !job.snapshot.is_paused()
                                     && job.speed > 1.0
                                     && total > downloaded
@@ -2011,6 +2042,18 @@ mod tests {
             seed: false,
             dest: PathBuf::from(dest),
         }
+    }
+
+    #[test]
+    fn restoring_placeholder_total_is_indeterminate() {
+        assert!(job_bar_fraction("starting", 25, 100).is_none());
+        assert!(
+            job_bar_fraction("Initializing torrent client & verifying data...", 25, 100).is_none()
+        );
+        assert!(job_bar_fraction("downloading", 250, 1).is_none());
+        assert_eq!(job_bar_fraction("downloading", 25, 100), Some(0.25));
+        assert_eq!(job_bar_fraction("paused", 25, 100), Some(0.25));
+        assert_eq!(job_bar_fraction("downloading", 0, 0), Some(0.0));
     }
 
     #[test]

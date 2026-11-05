@@ -261,7 +261,9 @@ pub async fn start_download_with(
     let info_hash = magnet_info_hash(magnet_uri).context("magnet has no info hash")?;
     let folder_lock = magnet_folder_lock(&info_hash);
     let _folder = folder_lock.lock().await;
-    progress.set_message("Initializing torrent client & verifying data...");
+    if !progress.is_paused() {
+        progress.set_message("Initializing torrent client & verifying data...");
+    }
 
     // Compilation torrents open many files at once; macOS defaults are often 256.
     let _ = librqbit::try_increase_nofile_limit();

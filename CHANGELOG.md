@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [3.4.1] - 2026-11-05
+
+### Changed
+
+- GUI auto-update control is a plain label plus a track-and-knob slider (same check-on-enable behavior)
+- Job rows: copy icon after the title copies that job’s magnet or HTTP URL
+- Waiting/starting job bar ping-pongs left and right with eased motion instead of wrapping with a jump
+
 ## [3.4.0] - 2026-11-05
 
 ### Added
@@ -13,9 +21,6 @@ All notable changes to this project are documented here.
 
 - Closing the GUI still drops live torrent sessions; share-mode rows that were seeding start seeding again after the restore probe
 - Title click still opens that row’s dest (not the folder used for new START jobs)
-- GUI auto-update control is a plain label plus a track-and-knob slider (same check-on-enable behavior)
-- Job rows: copy icon after the title copies that job’s magnet or HTTP URL
-- Waiting/starting job bar ping-pongs left and right with eased motion instead of wrapping with a jump
 
 ### Fixed
 

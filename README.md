@@ -155,7 +155,7 @@ The GUI uses the same engines: phosphor / amber / ice (last pick saved), magnet/
 
 ## Updates
 
-Opt-in. The updater downloads only `https://github.com/danted4/torrenter/releases/download/<tag>/<name>` (tag in the path must match the release), checks `SHA256SUMS`, caps size, and times out. GitHub then 302s to `objects.githubusercontent.com`; that redirect is followed because the first hop is pinned.
+Opt-in. The updater downloads only `https://github.com/danted4/torrenter/releases/download/<tag>/<name>` (tag in the path must match the release), checks `SHA256SUMS`, caps size, and times out. GitHub then 302s to `objects.githubusercontent.com`; that redirect is followed because the first hop is pinned. The binary uses four `Range` parts when the CDN returns 206 (same split as HTTP jobs, not the user dest/resume engine); otherwise it is a single GET. The GUI install toast shows the job-row progress bar.
 
 `SHA256SUMS` is **same-publisher integrity**, not a signature. A stolen GitHub token can still ship a binary and a matching sums file.
 

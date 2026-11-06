@@ -246,7 +246,10 @@ enum WorkerCmd {
     },
     Probe(Vec<ProbeSpec>),
     Check,
-    Install(AvailableUpdate),
+    Install {
+        update: AvailableUpdate,
+        snapshot: Arc<JobSnapshot>,
+    },
 }
 
 struct ProbeSpec {
@@ -292,6 +295,7 @@ struct Toast {
     text: String,
     fail: bool,
     expires_at: Option<Instant>,
+    progress: Option<Arc<JobSnapshot>>,
 }
 
 struct RestartDraft {
@@ -684,22 +688,32 @@ impl GuiApp {
     }
 
     fn toast_info(&mut self, text: impl Into<String>) {
-        self.push_toast(text.into(), false, Some(STATUS_HOLD));
+        self.push_toast(text.into(), false, Some(STATUS_HOLD), None);
     }
 
     fn toast_hold(&mut self, text: impl Into<String>) {
-        self.push_toast(text.into(), false, None);
+        self.push_toast(text.into(), false, None, None);
+    }
+
+    fn toast_hold_progress(&mut self, text: impl Into<String>, snapshot: Arc<JobSnapshot>) {
+        self.push_toast(text.into(), false, None, Some(snapshot));
     }
 
     fn toast_fail(&mut self, text: impl Into<String>) {
-        self.push_toast(text.into(), true, Some(FAIL_HOLD));
+        self.push_toast(text.into(), true, Some(FAIL_HOLD), None);
     }
 
     fn toast_fatal(&mut self, text: impl Into<String>) {
-        self.push_toast(text.into(), true, None);
+        self.push_toast(text.into(), true, None, None);
     }
 
-    fn push_toast(&mut self, text: String, fail: bool, hold: Option<Duration>) {
+    fn push_toast(
+        &mut self,
+        text: String,
+        fail: bool,
+        hold: Option<Duration>,
+        progress: Option<Arc<JobSnapshot>>,
+    ) {
         if text.is_empty() {
             return;
         }
@@ -711,7 +725,18 @@ impl GuiApp {
             text,
             fail,
             expires_at: hold.map(|duration| Instant::now() + duration),
+            progress,
         });
+    }
+
+    fn start_install(&mut self, update: AvailableUpdate, label: String) {
+        let snapshot = Arc::new(JobSnapshot::default());
+        snapshot.set_status("starting");
+        let _ = self.tx.send(WorkerCmd::Install {
+            update,
+            snapshot: Arc::clone(&snapshot),
+        });
+        self.toast_hold_progress(label, snapshot);
     }
 
     fn expire_toasts(&mut self) {
@@ -787,8 +812,7 @@ impl GuiApp {
                     self.banner_dismissed = false;
                     self.toasts.retain(|toast| toast.text != CHECKING_UPDATES);
                     if self.auto_update {
-                        let _ = self.tx.send(WorkerCmd::Install(update.clone()));
-                        self.toast_hold(format!("installing {}…", update.tag));
+                        self.start_install(update.clone(), format!("installing {}…", update.tag));
                     }
                     self.pending = Some(update);
                 }
@@ -803,8 +827,12 @@ impl GuiApp {
                     }
                 }
                 WorkerEvent::UpdateFailed(error) => {
+                    self.toasts
+                        .retain(|toast| !toast.text.starts_with("installing "));
                     if self.auto_update {
                         self.toast_fatal(error);
+                    } else {
+                        self.toast_fail(error);
                     }
                 }
                 WorkerEvent::Installed(tag) => {
@@ -1100,10 +1128,10 @@ impl eframe::App for GuiApp {
                                                 .button(ink("install", 12.0, palette.fg))
                                                 .clicked()
                                             {
-                                                let _ = self
-                                                    .tx
-                                                    .send(WorkerCmd::Install(available.clone()));
-                                                self.toast_hold("installing update…");
+                                                self.start_install(
+                                                    available.clone(),
+                                                    "installing update…".into(),
+                                                );
                                             }
                                         },
                                     );
@@ -1595,6 +1623,17 @@ impl GuiApp {
                             .show(ui, |ui| {
                                 ui.set_max_width(360.0);
                                 glass_label(ui, &toast.text, 12.0, color);
+                                if let Some(snapshot) = &toast.progress {
+                                    ui.add_space(6.0);
+                                    let downloaded = snapshot
+                                        .downloaded
+                                        .load(std::sync::atomic::Ordering::Relaxed);
+                                    let total =
+                                        snapshot.total.load(std::sync::atomic::Ordering::Relaxed);
+                                    let fraction =
+                                        job_bar_fraction(&snapshot.status(), downloaded, total);
+                                    paint_job_progress(ui, palette.fg, palette.row_alt, fraction);
+                                }
                             })
                             .response
                             .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -2395,14 +2434,16 @@ fn worker_loop(rx: Receiver<WorkerCmd>, tx: Sender<WorkerEvent>) {
                         let _ = tx.send(WorkerEvent::UpdateFailed(format!("{error:#}")));
                     }
                 },
-                WorkerCmd::Install(update) => match update::install_update(&update).await {
-                    Ok(_) => {
-                        let _ = tx.send(WorkerEvent::Installed(update.tag));
+                WorkerCmd::Install { update, snapshot } => {
+                    match update::install_update_reported(&update, Some(snapshot)).await {
+                        Ok(_) => {
+                            let _ = tx.send(WorkerEvent::Installed(update.tag));
+                        }
+                        Err(error) => {
+                            let _ = tx.send(WorkerEvent::UpdateFailed(format!("{error:#}")));
+                        }
                     }
-                    Err(error) => {
-                        let _ = tx.send(WorkerEvent::UpdateFailed(format!("{error:#}")));
-                    }
-                },
+                }
             }
         });
     }

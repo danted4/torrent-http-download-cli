@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [3.5.4] - 2026-11-06
+
+### Added
+
+- GUI **violet** theme (light lilac ink)
+
 ## [3.5.3] - 2026-11-06
 
 ### Fixed

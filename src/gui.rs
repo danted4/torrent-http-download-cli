@@ -31,6 +31,7 @@ enum ThemeId {
     Amber,
     Ice,
     Scarlet,
+    Violet,
 }
 
 impl ThemeId {
@@ -39,6 +40,7 @@ impl ThemeId {
             "amber" => Self::Amber,
             "ice" => Self::Ice,
             "scarlet" => Self::Scarlet,
+            "violet" => Self::Violet,
             _ => Self::Phosphor,
         }
     }
@@ -49,6 +51,7 @@ impl ThemeId {
             Self::Amber => "amber",
             Self::Ice => "ice",
             Self::Scarlet => "scarlet",
+            Self::Violet => "violet",
         }
     }
 }
@@ -170,6 +173,14 @@ fn theme(id: ThemeId) -> Theme {
             fg: Color32::from_rgb(255, 88, 102),
             dim: Color32::from_rgb(176, 52, 64),
             fail: Color32::from_rgb(255, 168, 72),
+        },
+        ThemeId::Violet => Theme {
+            bg: Color32::from_rgb(10, 8, 14),
+            row: Color32::from_rgb(18, 14, 26),
+            row_alt: Color32::from_rgb(26, 20, 36),
+            fg: Color32::from_rgb(210, 186, 255),
+            dim: Color32::from_rgb(148, 124, 196),
+            fail: Color32::from_rgb(255, 140, 96),
         },
     }
 }
@@ -1466,7 +1477,7 @@ impl GuiApp {
                     .corner_radius(8),
             )
             .show(ctx, |ui| {
-                ui.set_width(204.0);
+                ui.set_width(228.0);
                 if settings_close(ui, palette).clicked() {
                     close = true;
                 }
@@ -1477,6 +1488,7 @@ impl GuiApp {
                         ui.scope(|ui| {
                             ui.style_mut().interaction.interact_radius = 0.0;
                             for (id, name) in [
+                                (ThemeId::Violet, "violet"),
                                 (ThemeId::Scarlet, "scarlet"),
                                 (ThemeId::Ice, "ice"),
                                 (ThemeId::Amber, "amber"),
@@ -2493,12 +2505,15 @@ mod tests {
         let b = theme(ThemeId::Amber).fg;
         let c = theme(ThemeId::Ice).fg;
         let d = theme(ThemeId::Scarlet).fg;
+        let e = theme(ThemeId::Violet).fg;
         assert_ne!(a, b);
         assert_ne!(b, c);
         assert_ne!(a, c);
         assert_ne!(a, d);
         assert_ne!(b, d);
         assert_ne!(c, d);
+        assert_ne!(a, e);
+        assert_ne!(d, e);
     }
 
     #[test]
@@ -2513,6 +2528,7 @@ mod tests {
         assert_eq!(ThemeId::from_config("amber").as_str(), "amber");
         assert_eq!(ThemeId::from_config("ICE").as_str(), "ice");
         assert_eq!(ThemeId::from_config("scarlet").as_str(), "scarlet");
+        assert_eq!(ThemeId::from_config("violet").as_str(), "violet");
         assert_eq!(ThemeId::from_config("blood").as_str(), "phosphor");
         assert_eq!(ThemeId::from_config("").as_str(), "phosphor");
         assert_eq!(ThemeId::from_config("unknown").as_str(), "phosphor");
@@ -2546,6 +2562,7 @@ mod tests {
             ThemeId::Amber,
             ThemeId::Ice,
             ThemeId::Scarlet,
+            ThemeId::Violet,
         ] {
             let palette = theme(id);
             let live = row_accent(palette, false);

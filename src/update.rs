@@ -760,6 +760,7 @@ pub fn normalize_theme(name: &str) -> &'static str {
     match name.trim().to_ascii_lowercase().as_str() {
         "amber" => "amber",
         "ice" => "ice",
+        "scarlet" => "scarlet",
         _ => "phosphor",
     }
 }
@@ -884,7 +885,8 @@ mod tests {
         let parsed: AppConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.theme, "amber");
         assert_eq!(normalize_theme("Ice"), "ice");
-        assert_eq!(normalize_theme("scarlet"), "phosphor");
+        assert_eq!(normalize_theme("scarlet"), "scarlet");
+        assert_eq!(normalize_theme("blood"), "phosphor");
         assert_eq!(normalize_theme("  AMBER "), "amber");
         assert_eq!(normalize_theme("nope"), "phosphor");
         assert_eq!(normalize_theme(""), "phosphor");

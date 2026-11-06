@@ -26,6 +26,16 @@ fn default_theme() -> String {
     "phosphor".into()
 }
 
+pub const GLASS_TINT_MIN: u8 = 40;
+pub const GLASS_TINT_MAX: u8 = 210;
+/// 60% of the min..=max range (still 40–210).
+pub const GLASS_TINT_DEFAULT: u8 =
+    GLASS_TINT_MIN + ((GLASS_TINT_MAX - GLASS_TINT_MIN) as u16 * 60 / 100) as u8;
+
+fn default_glass_tint() -> u8 {
+    GLASS_TINT_DEFAULT
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppConfig {
     #[serde(default)]
@@ -34,6 +44,8 @@ pub struct AppConfig {
     pub seed: bool,
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default = "default_glass_tint")]
+    pub glass_tint: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download_dir: Option<PathBuf>,
     #[serde(default)]
@@ -54,6 +66,7 @@ impl Default for AppConfig {
             auto_update: false,
             seed: true,
             theme: default_theme(),
+            glass_tint: default_glass_tint(),
             download_dir: None,
             release_etag: None,
             cached_tag: None,
@@ -745,6 +758,29 @@ pub fn set_theme(theme: impl AsRef<str>) -> Result<AppConfig> {
     Ok(config)
 }
 
+pub fn normalize_glass_tint(value: u8) -> u8 {
+    value.clamp(GLASS_TINT_MIN, GLASS_TINT_MAX)
+}
+
+pub fn glass_tint_percent(value: u8) -> u8 {
+    let value = u16::from(normalize_glass_tint(value));
+    let span = u16::from(GLASS_TINT_MAX - GLASS_TINT_MIN);
+    ((value - u16::from(GLASS_TINT_MIN)) * 100 / span) as u8
+}
+
+pub fn glass_tint_from_percent(percent: u8) -> u8 {
+    let percent = u16::from(percent.min(100));
+    let span = u16::from(GLASS_TINT_MAX - GLASS_TINT_MIN);
+    GLASS_TINT_MIN + (percent * span / 100) as u8
+}
+
+pub fn set_glass_tint(value: u8) -> Result<AppConfig> {
+    let mut config = load_config();
+    config.glass_tint = normalize_glass_tint(value);
+    save_config(&config)?;
+    Ok(config)
+}
+
 pub fn set_download_dir(path: impl AsRef<Path>) -> Result<AppConfig> {
     let stored = crate::paths::persistable_dir(path)?;
     let mut config = load_config();
@@ -783,6 +819,7 @@ mod tests {
         assert!(parsed.seed);
         assert!(!parsed.auto_update);
         assert_eq!(parsed.theme, "phosphor");
+        assert_eq!(parsed.glass_tint, GLASS_TINT_DEFAULT);
         assert!(parsed.download_dir.is_none());
     }
 
@@ -825,11 +862,31 @@ mod tests {
         let parsed: AppConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.theme, "amber");
         assert_eq!(normalize_theme("Ice"), "ice");
+        assert_eq!(normalize_theme("scarlet"), "phosphor");
         assert_eq!(normalize_theme("  AMBER "), "amber");
         assert_eq!(normalize_theme("nope"), "phosphor");
         assert_eq!(normalize_theme(""), "phosphor");
         let parsed: AppConfig = serde_json::from_str(r#"{"theme":"ice"}"#).unwrap();
         assert_eq!(normalize_theme(&parsed.theme), "ice");
+    }
+
+    #[test]
+    fn glass_tint_clamps_and_defaults() {
+        assert_eq!(normalize_glass_tint(0), GLASS_TINT_MIN);
+        assert_eq!(normalize_glass_tint(255), GLASS_TINT_MAX);
+        assert_eq!(glass_tint_from_percent(0), GLASS_TINT_MIN);
+        assert_eq!(glass_tint_from_percent(100), GLASS_TINT_MAX);
+        assert_eq!(glass_tint_from_percent(60), GLASS_TINT_DEFAULT);
+        assert_eq!(glass_tint_percent(GLASS_TINT_DEFAULT), 60);
+        let parsed: AppConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed.glass_tint, GLASS_TINT_DEFAULT);
+        let config = AppConfig {
+            glass_tint: 90,
+            ..AppConfig::default()
+        };
+        let parsed: AppConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(parsed.glass_tint, 90);
     }
 
     #[test]

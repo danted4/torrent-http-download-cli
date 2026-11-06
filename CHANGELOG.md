@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [3.5.0] - 2026-11-06
+
+### Added
+
+- GUI settings cog: theme swatches and a tint slider for the frosted window
+- macOS/Windows GUI uses a translucent window with OS backdrop blur; phosphor / amber / ice still set the ink
+
+### Changed
+
+- Theme and tint live in the cog; the auto-update slider stays on the header beside it
+- `glass_tint` is stored in `config.json` (40–210, default 60% of that range)
+
 ## [3.4.3] - 2026-11-05
 
 ### Fixed

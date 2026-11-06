@@ -1,6 +1,6 @@
 [package]
 name = "torrenter"
-version = "3.4.3"
+version = "3.5.0"
 edition = "2021"
 description = "CLI and native GUI: magnet/torrent and parallel multipart HTTP(S) with byte-range resume."
 license = "MIT"
@@ -11,7 +11,18 @@ rust-version = "1.85"
 
 [features]
 default = []
-gui = ["dep:eframe", "dep:rfd", "dep:open", "dep:winit"]
+gui = [
+    "dep:eframe",
+    "dep:rfd",
+    "dep:open",
+    "dep:winit",
+    "dep:window-vibrancy",
+    "dep:raw-window-handle",
+    "dep:objc2",
+    "dep:objc2-app-kit",
+    "dep:objc2-foundation",
+    "dep:objc2-quartz-core",
+]
 macos-app = []
 
 [dependencies]
@@ -25,6 +36,7 @@ indicatif = "0.17"
 librqbit = { version = "9", default-features = false, features = ["rust-tls", "disable-upload"] }
 open = { version = "5", optional = true }
 percent-encoding = "2"
+raw-window-handle = { version = "0.6", optional = true }
 rfd = { version = "0.15", optional = true }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "gzip", "brotli", "charset", "http2", "json"] }
@@ -36,6 +48,32 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 # eframe 0.31 does not re-export `winit/default`; this unifies CSD (`sctk-adwaita`) while AccessKit stays off.
 winit = { version = "0.30", optional = true }
+window-vibrancy = { version = "0.8", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "objc2-quartz-core",
+    "NSColor",
+    "NSGraphics",
+    "NSResponder",
+    "NSView",
+    "NSVisualEffectView",
+    "NSWindow",
+] }
+objc2-foundation = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSGeometry",
+    "NSThread",
+] }
+objc2-quartz-core = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "CALayer",
+    "objc2-core-foundation",
+] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

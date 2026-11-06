@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [3.5.2] - 2026-11-06
+
+### Added
+
+- GUI **scarlet** theme (neon red ink)
+
 ## [3.5.1] - 2026-11-06
 
 ### Fixed

@@ -25,6 +25,7 @@ enum ThemeId {
     Phosphor,
     Amber,
     Ice,
+    Scarlet,
 }
 
 impl ThemeId {
@@ -32,6 +33,7 @@ impl ThemeId {
         match update::normalize_theme(name) {
             "amber" => Self::Amber,
             "ice" => Self::Ice,
+            "scarlet" => Self::Scarlet,
             _ => Self::Phosphor,
         }
     }
@@ -41,6 +43,7 @@ impl ThemeId {
             Self::Phosphor => "phosphor",
             Self::Amber => "amber",
             Self::Ice => "ice",
+            Self::Scarlet => "scarlet",
         }
     }
 }
@@ -146,6 +149,14 @@ fn theme(id: ThemeId) -> Theme {
             fg: Color32::from_rgb(140, 220, 255),
             dim: Color32::from_rgb(70, 120, 150),
             fail: Color32::from_rgb(255, 120, 140),
+        },
+        ThemeId::Scarlet => Theme {
+            bg: Color32::from_rgb(10, 6, 8),
+            row: Color32::from_rgb(20, 10, 14),
+            row_alt: Color32::from_rgb(28, 14, 18),
+            fg: Color32::from_rgb(255, 88, 102),
+            dim: Color32::from_rgb(176, 52, 64),
+            fail: Color32::from_rgb(255, 168, 72),
         },
     }
 }
@@ -1455,6 +1466,7 @@ impl GuiApp {
                         ui.scope(|ui| {
                             ui.style_mut().interaction.interact_radius = 0.0;
                             for (id, name) in [
+                                (ThemeId::Scarlet, "scarlet"),
                                 (ThemeId::Ice, "ice"),
                                 (ThemeId::Amber, "amber"),
                                 (ThemeId::Phosphor, "phosphor"),
@@ -2463,9 +2475,13 @@ mod tests {
         let a = theme(ThemeId::Phosphor).fg;
         let b = theme(ThemeId::Amber).fg;
         let c = theme(ThemeId::Ice).fg;
+        let d = theme(ThemeId::Scarlet).fg;
         assert_ne!(a, b);
         assert_ne!(b, c);
         assert_ne!(a, c);
+        assert_ne!(a, d);
+        assert_ne!(b, d);
+        assert_ne!(c, d);
     }
 
     #[test]
@@ -2479,7 +2495,8 @@ mod tests {
     fn theme_id_maps_config_names() {
         assert_eq!(ThemeId::from_config("amber").as_str(), "amber");
         assert_eq!(ThemeId::from_config("ICE").as_str(), "ice");
-        assert_eq!(ThemeId::from_config("scarlet").as_str(), "phosphor");
+        assert_eq!(ThemeId::from_config("scarlet").as_str(), "scarlet");
+        assert_eq!(ThemeId::from_config("blood").as_str(), "phosphor");
         assert_eq!(ThemeId::from_config("").as_str(), "phosphor");
         assert_eq!(ThemeId::from_config("unknown").as_str(), "phosphor");
     }
@@ -2507,7 +2524,12 @@ mod tests {
 
     #[test]
     fn in_progress_accent_is_duller_than_settled() {
-        for id in [ThemeId::Phosphor, ThemeId::Amber, ThemeId::Ice] {
+        for id in [
+            ThemeId::Phosphor,
+            ThemeId::Amber,
+            ThemeId::Ice,
+            ThemeId::Scarlet,
+        ] {
             let palette = theme(id);
             let live = row_accent(palette, false);
             let done = row_accent(palette, true);

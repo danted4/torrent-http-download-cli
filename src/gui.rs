@@ -327,6 +327,7 @@ struct GuiApp {
     settings_open: bool,
     glass_applied: bool,
     viewport_fullscreen: bool,
+    viewport_focused: bool,
 }
 
 pub fn run() -> eframe::Result<()> {
@@ -395,6 +396,7 @@ impl GuiApp {
             settings_open: false,
             glass_applied: false,
             viewport_fullscreen: false,
+            viewport_focused: true,
         };
         if let Some(error) = launch_error {
             app.toast_fatal(error);
@@ -843,9 +845,11 @@ impl eframe::App for GuiApp {
         self.drain_events();
         self.expire_toasts();
         self.persist_jobs(false);
-        if !self.glass_applied {
+        let focused = ctx.input(|input| input.viewport().focused.unwrap_or(true));
+        if !self.glass_applied || self.viewport_focused != focused {
             crate::glass::apply(frame);
             self.glass_applied = true;
+            self.viewport_focused = focused;
         }
         self.viewport_fullscreen = viewport_is_fullscreen(ctx);
         let paint_tint = update::effective_glass_tint(self.glass_tint, self.viewport_fullscreen);
@@ -884,9 +888,15 @@ impl eframe::App for GuiApp {
                             egui::vec2(380.0, CONTROLS_H),
                             egui::Layout::left_to_right(egui::Align::Max),
                             |ui| {
-                                ui.spacing_mut().item_spacing.x = 4.0;
-                                ui.label(mono(identity::REPO, 18.0, palette.fg));
-                                ui.label(mono(VERSION_TAG, 10.0, palette.dim));
+                                glass_pair(
+                                    ui,
+                                    identity::REPO,
+                                    18.0,
+                                    palette.fg,
+                                    VERSION_TAG,
+                                    10.0,
+                                    palette.dim,
+                                );
                             },
                         );
                         let right_w = 200.0_f32;
@@ -899,7 +909,7 @@ impl eframe::App for GuiApp {
                                 .max_rect(right)
                                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
                             |ui| {
-                                ui.spacing_mut().item_spacing.x = 10.0;
+                                ui.spacing_mut().item_spacing.x = 8.0;
                                 if settings_cog(ui, palette, self.settings_open).clicked() {
                                     self.settings_open = !self.settings_open;
                                 }
@@ -974,7 +984,7 @@ impl eframe::App for GuiApp {
                         ui.add_space(gap);
                         let start = ui.add_sized(
                             egui::vec2(button_w, URL_H),
-                            egui::Button::new(mono("START", 14.0, palette.fg)),
+                            egui::Button::new(ink("START", 14.0, palette.fg)),
                         );
                         if start.clicked()
                             || (response.inner.lost_focus()
@@ -995,7 +1005,7 @@ impl eframe::App for GuiApp {
                         ui.spacing_mut().item_spacing.x = 8.0;
                         let folder = dest_glyph(ui, palette, true);
                         let shown = truncate_middle(&self.dest.display().to_string(), 72);
-                        let path = click_text(ui, mono(shown, 12.0, palette.dim))
+                        let path = click_text(ui, shown, 12.0, palette.dim)
                             .on_hover_text(self.dest.display().to_string());
                         if folder.clicked() || path.clicked() {
                             if let Some(picked) = Self::pick_folder(&self.dest) {
@@ -1026,19 +1036,20 @@ impl eframe::App for GuiApp {
                         .inner_margin(egui::Margin::symmetric(10, 6))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
-                                ui.label(mono(
+                                glass_label(
+                                    ui,
                                     format!("{tag} is on disk  ·  restart to run it"),
                                     13.0,
                                     palette.fg,
-                                ));
+                                );
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
-                                        if ui.button(mono("later", 12.0, palette.dim)).clicked() {
+                                        if ui.button(ink("later", 12.0, palette.dim)).clicked() {
                                             self.installed_tag = None;
                                         }
                                         if ui
-                                            .button(mono("restart now", 12.0, palette.fg))
+                                            .button(ink("restart now", 12.0, palette.fg))
                                             .clicked()
                                         {
                                             if let Err(error) = update::relaunch() {
@@ -1074,22 +1085,23 @@ impl eframe::App for GuiApp {
                                         5.5,
                                         palette.fg,
                                     );
-                                    ui.label(mono(
+                                    glass_label(
+                                        ui,
                                         format!("a new version is available  ·  {}", available.tag),
                                         13.0,
                                         palette.fg,
-                                    ));
+                                    );
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
                                             if ui
-                                                .button(mono("dismiss", 12.0, palette.dim))
+                                                .button(ink("dismiss", 12.0, palette.dim))
                                                 .clicked()
                                             {
                                                 self.banner_dismissed = true;
                                             }
                                             if ui
-                                                .button(mono("install", 12.0, palette.fg))
+                                                .button(ink("install", 12.0, palette.fg))
                                                 .clicked()
                                             {
                                                 let _ = self
@@ -1106,11 +1118,12 @@ impl eframe::App for GuiApp {
                 }
                 if self.jobs.is_empty() {
                     ui.centered_and_justified(|ui| {
-                        ui.label(mono(
+                        glass_label(
+                            ui,
                             "no jobs yet — paste a magnet or HTTP URL",
                             14.0,
                             palette.dim,
-                        ));
+                        );
                     });
                     return;
                 }
@@ -1123,7 +1136,7 @@ impl eframe::App for GuiApp {
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        ui.label(mono("search", 12.0, palette.dim));
+                        glass_label(ui, "search", 12.0, palette.dim);
                         let search_id = ui.make_persistent_id("job-search");
                         let focused = ui.memory(|memory| memory.has_focus(search_id));
                         let field_w = ui.available_width().max(160.0);
@@ -1168,7 +1181,7 @@ impl eframe::App for GuiApp {
                     .collect();
                 if visible.is_empty() {
                     ui.centered_and_justified(|ui| {
-                        ui.label(mono("no jobs match that search", 14.0, palette.dim));
+                        glass_label(ui, "no jobs match that search", 14.0, palette.dim);
                     });
                     return;
                 }
@@ -1223,7 +1236,7 @@ impl eframe::App for GuiApp {
                             .inner_margin(10.0);
                         card.show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    ui.label(mono(job.kind.label(), 13.0, palette.dim));
+                                    glass_label(ui, job.kind.label(), 13.0, palette.dim);
                                     if job.kind == Mode::Magnet {
                                         ui.add_space(6.0);
                                         seed_glyph(ui, job.seed, true, false, false, palette);
@@ -1235,7 +1248,7 @@ impl eframe::App for GuiApp {
                                     } else {
                                         truncate(&title, 64)
                                     };
-                                    if click_text(ui, mono(shown, 13.0, accent))
+                                    if click_text(ui, shown, 13.0, accent)
                                         .on_hover_text(&job.source)
                                         .clicked()
                                     {
@@ -1248,10 +1261,10 @@ impl eframe::App for GuiApp {
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
-                                            ui.label(mono(&job.added, 13.0, palette.dim));
+                                            glass_label(ui, &job.added, 13.0, palette.dim);
                                             if job.snapshot.is_active() {
                                                 if ui
-                                                    .button(mono("stop", 12.0, palette.fail))
+                                                    .button(ink("stop", 12.0, palette.fail))
                                                     .clicked()
                                                 {
                                                     job.snapshot.mark_stopped();
@@ -1263,7 +1276,7 @@ impl eframe::App for GuiApp {
                                                     "pause"
                                                 };
                                                 if ui
-                                                    .button(mono(pause_label, 12.0, accent))
+                                                    .button(ink(pause_label, 12.0, accent))
                                                     .clicked()
                                                 {
                                                     job.snapshot.toggle_pause();
@@ -1271,7 +1284,7 @@ impl eframe::App for GuiApp {
                                                 }
                                             } else {
                                                 if ui
-                                                    .button(mono("clear", 12.0, palette.dim))
+                                                    .button(ink("clear", 12.0, palette.dim))
                                                     .clicked()
                                                 {
                                                     clear_index = Some(index);
@@ -1279,7 +1292,7 @@ impl eframe::App for GuiApp {
                                                 if (job.kind == Mode::Magnet
                                                     || job.snapshot.is_stopped())
                                                     && ui
-                                                        .button(mono("restart", 12.0, palette.fg))
+                                                        .button(ink("restart", 12.0, palette.fg))
                                                         .clicked()
                                                 {
                                                     open_restart = Some(index);
@@ -1337,7 +1350,7 @@ impl eframe::App for GuiApp {
                                 } else {
                                     palette.dim
                                 };
-                                ui.label(mono(line, 12.0, color));
+                                glass_label(ui, line, 12.0, color);
                             });
                     }
                 });
@@ -1413,7 +1426,7 @@ impl GuiApp {
                 }
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    ui.label(mono("theme", 12.0, palette.dim));
+                    glass_label(ui, "theme", 12.0, palette.dim);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.scope(|ui| {
                             ui.style_mut().interaction.interact_radius = 0.0;
@@ -1438,13 +1451,14 @@ impl GuiApp {
                     let locked = self.viewport_fullscreen;
                     let shown = update::effective_glass_tint(self.glass_tint, locked);
                     ui.horizontal(|ui| {
-                        ui.label(mono("tint", 12.0, palette.dim));
+                        glass_label(ui, "tint", 12.0, palette.dim);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(mono(
+                            glass_label(
+                                ui,
                                 format!("{}%", update::glass_tint_percent(shown)),
                                 12.0,
                                 palette.fg,
-                            ));
+                            );
                         });
                     });
                     ui.add_space(4.0);
@@ -1502,7 +1516,7 @@ impl GuiApp {
                 ui.set_min_width(420.0);
                 if kind == Mode::Magnet {
                     ui.horizontal(|ui| {
-                        ui.label(mono("mode", 12.0, palette.dim));
+                        glass_label(ui, "mode", 12.0, palette.dim);
                         if let Some(value) = seed_toggle(ui, seed, palette, true) {
                             seed = value;
                         }
@@ -1513,7 +1527,7 @@ impl GuiApp {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     let folder = dest_glyph(ui, palette, true);
                     let shown = truncate_middle(&dest.display().to_string(), 48);
-                    let path = click_text(ui, mono(shown, 12.0, palette.dim))
+                    let path = click_text(ui, shown, 12.0, palette.dim)
                         .on_hover_text(dest.display().to_string());
                     if folder.clicked() || path.clicked() {
                         picked = Self::pick_folder(&dest);
@@ -1523,7 +1537,7 @@ impl GuiApp {
                 if ui
                     .add_sized(
                         egui::vec2(80.0, 28.0),
-                        egui::Button::new(mono("START", 14.0, palette.fg)),
+                        egui::Button::new(ink("START", 14.0, palette.fg)),
                     )
                     .clicked()
                 {
@@ -1584,7 +1598,7 @@ impl GuiApp {
                             .inner_margin(egui::Margin::symmetric(10, 8))
                             .show(ui, |ui| {
                                 ui.set_max_width(360.0);
-                                ui.label(mono(&toast.text, 12.0, color));
+                                glass_label(ui, &toast.text, 12.0, color);
                             })
                             .response
                             .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -1769,6 +1783,7 @@ fn settings_cog(ui: &mut egui::Ui, palette: Theme, open: bool) -> egui::Response
         palette.dim
     };
     let painter = ui.painter();
+    paint_brush_stroke(painter, rect.shrink(1.5));
     let stroke = Stroke::new(1.3_f32, color);
     let c = rect.center();
     painter.circle_stroke(c, 4.8, stroke);
@@ -1902,15 +1917,12 @@ fn auto_update_toggle(ui: &mut egui::Ui, on: bool, palette: Theme) -> egui::Resp
     );
     let track_w = 32.0_f32;
     let track_h = 16.0_f32;
-    let gap = 8.0_f32;
+    let gap = 18.0_f32;
     let size = egui::vec2(galley.size().x + gap + track_w, 26.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let painter = ui.painter();
-    painter.galley(
-        egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
-        galley,
-        palette.dim,
-    );
+    let text_pos = egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0);
+    paint_washed_galley(painter, text_pos, galley, palette.dim);
     let track = egui::Rect::from_center_size(
         egui::pos2(rect.right() - track_w / 2.0, rect.center().y),
         egui::vec2(track_w, track_h),
@@ -1959,14 +1971,13 @@ fn click_cursor(response: egui::Response) -> egui::Response {
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn click_text(ui: &mut egui::Ui, text: RichText) -> egui::Response {
-    click_cursor(
-        ui.add(
-            egui::Label::new(text)
-                .sense(Sense::click())
-                .selectable(false),
-        ),
-    )
+fn click_text(
+    ui: &mut egui::Ui,
+    text: impl Into<String>,
+    size: f32,
+    color: Color32,
+) -> egui::Response {
+    click_cursor(glass_text(ui, text, size, color, Sense::click()))
 }
 
 fn settings_close(ui: &mut egui::Ui, palette: Theme) -> egui::Response {
@@ -1978,7 +1989,8 @@ fn settings_close(ui: &mut egui::Ui, palette: Theme) -> egui::Response {
         FontId::new(14.0, FontFamily::Monospace),
         palette.fg,
     );
-    ui.painter().galley(
+    paint_washed_galley(
+        ui.painter(),
         egui::pos2(
             rect.center().x - title.size().x / 2.0,
             rect.center().y - title.size().y / 2.0,
@@ -2050,7 +2062,118 @@ fn paint_refresh(painter: &egui::Painter, center: egui::Pos2, radius: f32, color
     arc(215.0);
 }
 
-fn mono(text: impl Into<String>, size: f32, color: Color32) -> RichText {
+fn glass_text_wash() -> Color32 {
+    Color32::from_rgba_unmultiplied(16, 14, 16, 110)
+}
+
+fn paint_brush_stroke(painter: &egui::Painter, rect: egui::Rect) {
+    if !cfg!(any(target_os = "macos", target_os = "windows")) {
+        return;
+    }
+    if rect.width() < 0.5 || rect.height() < 0.5 {
+        return;
+    }
+    let wash = glass_text_wash();
+    // One highlighter smear: even thickness, round finger-pad caps (not giant end dots).
+    let smear = rect.expand2(egui::vec2(5.0, 2.5));
+    let radius = (smear.height() * 0.5).max(4.0);
+    painter.rect_filled(smear, radius, wash);
+}
+
+fn paint_washed_galley(
+    painter: &egui::Painter,
+    pos: egui::Pos2,
+    galley: std::sync::Arc<egui::Galley>,
+    color: Color32,
+) {
+    paint_brush_stroke(
+        painter,
+        egui::Rect::from_min_size(pos, galley.size()).expand2(egui::vec2(4.0, 2.0)),
+    );
+    painter.galley(pos, galley, color);
+}
+
+fn glass_text(
+    ui: &mut egui::Ui,
+    text: impl Into<String>,
+    size: f32,
+    color: Color32,
+    sense: Sense,
+) -> egui::Response {
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.into(), FontId::new(size, FontFamily::Monospace), color);
+    let pad = if cfg!(any(target_os = "macos", target_os = "windows")) {
+        egui::vec2(6.0, 4.0)
+    } else {
+        egui::vec2(0.0, 0.0)
+    };
+    let (rect, response) = ui.allocate_exact_size(galley.size() + pad, sense);
+    let pos = egui::pos2(
+        rect.left() + pad.x * 0.5,
+        rect.center().y - galley.size().y * 0.5,
+    );
+    paint_washed_galley(ui.painter(), pos, galley, color);
+    response
+}
+
+fn glass_label(
+    ui: &mut egui::Ui,
+    text: impl Into<String>,
+    size: f32,
+    color: Color32,
+) -> egui::Response {
+    glass_text(ui, text, size, color, Sense::hover())
+}
+
+fn glass_pair(
+    ui: &mut egui::Ui,
+    left: impl Into<String>,
+    left_size: f32,
+    left_color: Color32,
+    right: impl Into<String>,
+    right_size: f32,
+    right_color: Color32,
+) -> egui::Response {
+    let painter = ui.painter();
+    let left_galley = painter.layout_no_wrap(
+        left.into(),
+        FontId::new(left_size, FontFamily::Monospace),
+        left_color,
+    );
+    let right_galley = painter.layout_no_wrap(
+        right.into(),
+        FontId::new(right_size, FontFamily::Monospace),
+        right_color,
+    );
+    let gap = 7.0_f32;
+    let pad = if cfg!(any(target_os = "macos", target_os = "windows")) {
+        egui::vec2(8.0, 4.0)
+    } else {
+        egui::vec2(0.0, 0.0)
+    };
+    let inner_h = left_galley.size().y.max(right_galley.size().y);
+    let inner_w = left_galley.size().x + gap + right_galley.size().x;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(inner_w, inner_h) + pad, Sense::hover());
+    let bottom = rect.bottom() - pad.y * 0.5;
+    let left_pos = egui::pos2(rect.left() + pad.x * 0.5, bottom - left_galley.size().y);
+    let title_mid = left_pos.y + left_galley.size().y * 0.5;
+    let right_pos = egui::pos2(
+        left_pos.x + left_galley.size().x + gap,
+        title_mid - right_galley.size().y * 0.5,
+    );
+    let smear = egui::Rect::from_min_max(
+        egui::pos2(left_pos.x, bottom - inner_h),
+        egui::pos2(right_pos.x + right_galley.size().x, bottom),
+    );
+    paint_brush_stroke(ui.painter(), smear);
+    ui.painter().galley(left_pos, left_galley, left_color);
+    ui.painter().galley(right_pos, right_galley, right_color);
+    response
+}
+
+fn ink(text: impl Into<String>, size: f32, color: Color32) -> RichText {
     RichText::new(text.into())
         .font(FontId::new(size, FontFamily::Monospace))
         .color(color)
@@ -2286,6 +2409,13 @@ mod tests {
         assert_ne!(a, b);
         assert_ne!(b, c);
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn glass_text_wash_is_dark_enough_for_light_frost() {
+        let wash = glass_text_wash();
+        assert!(wash.a() >= 90, "wash must sit over a light wallpaper");
+        assert!(wash.r() < 32 && wash.g() < 32 && wash.b() < 32);
     }
 
     #[test]

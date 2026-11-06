@@ -14,7 +14,11 @@ pub fn apply(window: &impl HasWindowHandle) {
     macos::apply(window);
     #[cfg(target_os = "windows")]
     {
-        let _ = window_vibrancy::apply_acrylic(window, Some((12, 12, 12, 90)));
+        // Acrylic (`TRANSIENTWINDOW`) goes solid when the window is not focused.
+        // Mica is the main-window backdrop and stays put; acrylic is Win10 fallback.
+        if window_vibrancy::apply_mica(window, Some(true)).is_err() {
+            let _ = window_vibrancy::apply_acrylic(window, Some((12, 12, 12, 90)));
+        }
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

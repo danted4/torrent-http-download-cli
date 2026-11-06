@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [3.5.1] - 2026-11-06
+
+### Fixed
+
+- Frosted labels and the settings cog sit on a light brush-stroke wash so 0% tint stays readable on a light wallpaper
+- Windows uses Mica (acrylic only as a fallback) so an unfocused window does not snap to a solid dark backdrop
+
 ## [3.5.0] - 2026-11-06
 
 ### Added

@@ -327,7 +327,6 @@ struct GuiApp {
     settings_open: bool,
     glass_applied: bool,
     viewport_fullscreen: bool,
-    viewport_focused: bool,
 }
 
 pub fn run() -> eframe::Result<()> {
@@ -396,7 +395,6 @@ impl GuiApp {
             settings_open: false,
             glass_applied: false,
             viewport_fullscreen: false,
-            viewport_focused: true,
         };
         if let Some(error) = launch_error {
             app.toast_fatal(error);
@@ -845,11 +843,9 @@ impl eframe::App for GuiApp {
         self.drain_events();
         self.expire_toasts();
         self.persist_jobs(false);
-        let focused = ctx.input(|input| input.viewport().focused.unwrap_or(true));
-        if !self.glass_applied || self.viewport_focused != focused {
+        if !self.glass_applied {
             crate::glass::apply(frame);
             self.glass_applied = true;
-            self.viewport_focused = focused;
         }
         self.viewport_fullscreen = viewport_is_fullscreen(ctx);
         let paint_tint = update::effective_glass_tint(self.glass_tint, self.viewport_fullscreen);
@@ -2100,21 +2096,7 @@ fn glass_text(
     color: Color32,
     sense: Sense,
 ) -> egui::Response {
-    let galley =
-        ui.painter()
-            .layout_no_wrap(text.into(), FontId::new(size, FontFamily::Monospace), color);
-    let pad = if cfg!(any(target_os = "macos", target_os = "windows")) {
-        egui::vec2(6.0, 4.0)
-    } else {
-        egui::vec2(0.0, 0.0)
-    };
-    let (rect, response) = ui.allocate_exact_size(galley.size() + pad, sense);
-    let pos = egui::pos2(
-        rect.left() + pad.x * 0.5,
-        rect.center().y - galley.size().y * 0.5,
-    );
-    paint_washed_galley(ui.painter(), pos, galley, color);
-    response
+    layout_glass_text(ui, text, size, color, sense, false)
 }
 
 fn glass_label(
@@ -2123,7 +2105,36 @@ fn glass_label(
     size: f32,
     color: Color32,
 ) -> egui::Response {
-    glass_text(ui, text, size, color, Sense::hover())
+    layout_glass_text(ui, text, size, color, Sense::hover(), true)
+}
+
+fn layout_glass_text(
+    ui: &mut egui::Ui,
+    text: impl Into<String>,
+    size: f32,
+    color: Color32,
+    sense: Sense,
+    wrap: bool,
+) -> egui::Response {
+    let pad = if cfg!(any(target_os = "macos", target_os = "windows")) {
+        egui::vec2(6.0, 4.0)
+    } else {
+        egui::vec2(0.0, 0.0)
+    };
+    let font = FontId::new(size, FontFamily::Monospace);
+    let galley = if wrap {
+        let wrap_width = (ui.available_width() - pad.x).max(1.0);
+        ui.painter().layout(text.into(), font, color, wrap_width)
+    } else {
+        ui.painter().layout_no_wrap(text.into(), font, color)
+    };
+    let (rect, response) = ui.allocate_exact_size(galley.size() + pad, sense);
+    let pos = egui::pos2(
+        rect.left() + pad.x * 0.5,
+        rect.center().y - galley.size().y * 0.5,
+    );
+    paint_washed_galley(ui.painter(), pos, galley, color);
+    response
 }
 
 fn glass_pair(

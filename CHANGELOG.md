@@ -7,7 +7,8 @@ All notable changes to this project are documented here.
 ### Fixed
 
 - Frosted labels and the settings cog sit on a light brush-stroke wash so 0% tint stays readable on a light wallpaper
-- Windows uses Mica (acrylic only as a fallback) so an unfocused window does not snap to a solid dark backdrop
+- Long job-status and toast lines wrap under that wash instead of overflowing
+- Windows uses Mica while focused (acrylic fallback on older Windows); DWM fills an inactive window with a solid theme color
 
 ## [3.5.0] - 2026-11-06
 

@@ -4,7 +4,7 @@
 
 **torrenter gui**
 
-![torrenter gui](docs/gui.jpg)
+![torrenter gui](docs/gui-3.5.4.jpg)
 
 **torrenter cli**
 

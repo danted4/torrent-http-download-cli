@@ -761,6 +761,7 @@ pub fn normalize_theme(name: &str) -> &'static str {
         "amber" => "amber",
         "ice" => "ice",
         "scarlet" => "scarlet",
+        "violet" => "violet",
         _ => "phosphor",
     }
 }
@@ -886,6 +887,7 @@ mod tests {
         assert_eq!(parsed.theme, "amber");
         assert_eq!(normalize_theme("Ice"), "ice");
         assert_eq!(normalize_theme("scarlet"), "scarlet");
+        assert_eq!(normalize_theme("violet"), "violet");
         assert_eq!(normalize_theme("blood"), "phosphor");
         assert_eq!(normalize_theme("  AMBER "), "amber");
         assert_eq!(normalize_theme("nope"), "phosphor");

@@ -22,6 +22,8 @@ use crate::validate::{is_valid_download_url, is_valid_magnet_url};
 
 const WINDOW_INNER: [f32; 2] = [960.0, 580.0];
 const WINDOW_MIN: [f32; 2] = [760.0, 440.0];
+const INDETERMINATE_SPAN: f32 = 0.28;
+const INDETERMINATE_HZ: f32 = 0.4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ThemeId {
@@ -97,8 +99,15 @@ fn indeterminate_bar_offset(time: f32, span: f32) -> f32 {
     ping * travel
 }
 
-fn paint_job_progress(ui: &mut egui::Ui, accent: Color32, track: Color32, fraction: Option<f32>) {
-    let desired = egui::vec2(ui.available_width(), 8.0);
+fn paint_job_progress(
+    ui: &mut egui::Ui,
+    accent: Color32,
+    track: Color32,
+    fraction: Option<f32>,
+    width: Option<f32>,
+) {
+    let track_w = width.unwrap_or_else(|| ui.available_width()).max(1.0);
+    let desired = egui::vec2(track_w, 8.0);
     let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
     ui.painter().rect_filled(rect, 2.0, track);
     let fill = if let Some(fraction) = fraction {
@@ -108,10 +117,11 @@ fn paint_job_progress(ui: &mut egui::Ui, accent: Color32, track: Color32, fracti
     } else {
         ui.ctx().request_repaint_after(SLIDER_REPAINT);
         let t = ui.input(|input| input.time) as f32;
-        let start = indeterminate_bar_offset(t, INDETERMINATE_SPAN);
+        let span = (32.0 / rect.width()).clamp(0.2, INDETERMINATE_SPAN);
+        let start = indeterminate_bar_offset(t, span);
         let mut fill = rect;
         fill.min.x += rect.width() * start;
-        fill.set_width(rect.width() * INDETERMINATE_SPAN);
+        fill.set_width(rect.width() * span);
         fill
     };
     if fill.width() > 0.5 {
@@ -246,8 +256,6 @@ const STATUS_HOLD: Duration = Duration::from_millis(1500);
 const FAIL_HOLD: Duration = Duration::from_secs(5);
 const PERSIST_EVERY: Duration = Duration::from_secs(2);
 const SLIDER_REPAINT: Duration = Duration::from_millis(16);
-const INDETERMINATE_SPAN: f32 = 0.28;
-const INDETERMINATE_HZ: f32 = 0.4;
 
 enum WorkerCmd {
     Download {
@@ -1340,7 +1348,7 @@ impl eframe::App for GuiApp {
                                     );
                                 });
                                 let fraction = job_bar_fraction(&status, downloaded, total);
-                                paint_job_progress(ui, accent, palette.row_alt, fraction);
+                                paint_job_progress(ui, accent, palette.row_alt, fraction, None);
                                 let eta = if !job.snapshot.is_paused()
                                     && job.speed > 1.0
                                     && total > downloaded
@@ -1638,7 +1646,7 @@ impl GuiApp {
                             .inner_margin(egui::Margin::symmetric(10, 8))
                             .show(ui, |ui| {
                                 ui.set_max_width(360.0);
-                                glass_label(ui, &toast.text, 12.0, color);
+                                let label = glass_label(ui, &toast.text, 12.0, color);
                                 if let Some(snapshot) = &toast.progress {
                                     ui.add_space(6.0);
                                     let downloaded = snapshot
@@ -1648,7 +1656,13 @@ impl GuiApp {
                                         snapshot.total.load(std::sync::atomic::Ordering::Relaxed);
                                     let fraction =
                                         job_bar_fraction(&snapshot.status(), downloaded, total);
-                                    paint_job_progress(ui, palette.fg, palette.row_alt, fraction);
+                                    paint_job_progress(
+                                        ui,
+                                        palette.fg,
+                                        palette.row_alt,
+                                        fraction,
+                                        Some(label.rect.width()),
+                                    );
                                 }
                             })
                             .response

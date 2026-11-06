@@ -7,6 +7,7 @@ All notable changes to this project are documented here.
 ### Fixed
 
 - Windows 11 uses light Mica (main-window backdrop). Dark Mica in 3.5.1 made 0% tint too dark; Win11 acrylic is a flyout type and after minimize/idle the taskbar can show a tiny shadowed pill that never restores until restart
+- Installing-update toast stays as wide as its text; the progress bar matches that width instead of stretching the card
 
 ## [3.5.2] - 2026-11-06
 

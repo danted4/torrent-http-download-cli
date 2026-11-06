@@ -1,6 +1,4 @@
-# torrenter
-
-<a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="16" height="16"></a>&nbsp;<a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="16" height="16"></a>&nbsp;<a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="16" height="16"></a>
+# torrenter <a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="28" height="28" align="absmiddle"></a> <a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="28" height="28" align="absmiddle"></a> <a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="28" height="28" align="absmiddle"></a>
 
 **torrenter gui**
 

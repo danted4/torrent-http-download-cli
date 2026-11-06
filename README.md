@@ -1,5 +1,7 @@
 # torrenter
 
+<a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="16" height="16"></a>&nbsp;<a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="16" height="16"></a>&nbsp;<a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="16" height="16"></a>
+
 **torrenter gui**
 
 ![torrenter gui](docs/gui.jpg)

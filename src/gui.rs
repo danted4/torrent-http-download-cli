@@ -20,6 +20,9 @@ use crate::torrent::{
 use crate::update::{self, AvailableUpdate};
 use crate::validate::{is_valid_download_url, is_valid_magnet_url};
 
+const WINDOW_INNER: [f32; 2] = [960.0, 580.0];
+const WINDOW_MIN: [f32; 2] = [760.0, 440.0];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ThemeId {
     Phosphor,
@@ -349,8 +352,8 @@ pub fn run() -> eframe::Result<()> {
     let viewport = egui::ViewportBuilder::default()
         .with_app_id("torrenter")
         .with_title(identity::banner())
-        .with_inner_size([960.0, 580.0])
-        .with_min_inner_size([760.0, 440.0])
+        .with_inner_size(WINDOW_INNER)
+        .with_min_inner_size(WINDOW_MIN)
         .with_icon(crate::icon::app_icon());
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let viewport = viewport.with_transparent(true);

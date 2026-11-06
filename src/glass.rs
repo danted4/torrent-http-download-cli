@@ -1,4 +1,4 @@
-//! OS backdrop blur behind the egui surface. macOS vibrancy, Windows acrylic.
+//! OS backdrop blur behind the egui surface. macOS vibrancy, Windows Mica.
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use eframe::egui::Color32;
@@ -14,7 +14,12 @@ pub fn apply(window: &impl HasWindowHandle) {
     macos::apply(window);
     #[cfg(target_os = "windows")]
     {
-        let _ = window_vibrancy::apply_acrylic(window, Some((12, 12, 12, 90)));
+        // Mica while focused. DWM replaces it with a solid theme fill when
+        // inactive; re-applying the attribute does not keep frost. Acrylic
+        // (`TRANSIENTWINDOW`) is the Win10 fallback and behaves the same.
+        if window_vibrancy::apply_mica(window, None).is_err() {
+            let _ = window_vibrancy::apply_acrylic(window, Some((12, 12, 12, 90)));
+        }
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

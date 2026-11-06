@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## [3.5.1] - 2026-11-06
+
+### Fixed
+
+- Frosted labels and the settings cog sit on a light brush-stroke wash so 0% tint stays readable on a light wallpaper
+- Long job-status and toast lines wrap under that wash instead of overflowing
+- Windows uses Mica while focused (acrylic fallback on older Windows); DWM fills an inactive window with a solid theme color
+
+### Changed
+
+- Installing-update toast shows the same progress bar as job rows and cannot be dismissed until success or failure
+- `torrenter update` shows the CLI byte bar while the asset downloads
+- Release binaries use the HTTP Range transfer (gzip/brotli off, exact 206, merge via tmp) into a file beside the running exe, not dest/`.resume` (still a pinned GitHub first hop + `SHA256SUMS`)
+
 ## [3.5.0] - 2026-11-06
 
 ### Added

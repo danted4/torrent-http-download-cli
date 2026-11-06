@@ -1,8 +1,10 @@
 //! OS backdrop blur behind the egui surface. macOS vibrancy, Windows acrylic.
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use eframe::egui::Color32;
 use raw_window_handle::HasWindowHandle;
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn tint(color: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
 }
@@ -20,6 +22,7 @@ pub fn apply(window: &impl HasWindowHandle) {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn clear_color() -> [f32; 4] {
     [0.0, 0.0, 0.0, 0.0]
 }

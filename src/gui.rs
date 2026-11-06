@@ -1391,6 +1391,7 @@ impl GuiApp {
         if !self.settings_open {
             return;
         }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         let mut persist_tint = false;
         let mut close = false;
         egui::Window::new("settings")
@@ -1458,7 +1459,12 @@ impl GuiApp {
                     }
                 }
             });
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         if persist_tint || close {
+            let _ = update::set_glass_tint(self.glass_tint);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        if close {
             let _ = update::set_glass_tint(self.glass_tint);
         }
         if close {
@@ -1704,6 +1710,7 @@ fn viewport_is_fullscreen(ctx: &egui::Context) -> bool {
     ctx.input(|input| input.viewport().fullscreen == Some(true))
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn tint_slider(ui: &mut egui::Ui, value: &mut u8, palette: Theme, locked: bool) -> egui::Response {
     let min = update::GLASS_TINT_MIN;
     let max = update::GLASS_TINT_MAX;

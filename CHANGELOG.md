@@ -12,8 +12,9 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- Installing-update toast shows the same progress bar as job rows
-- Release binaries download in four Range parts when the CDN honors them (still a pinned GitHub first hop + `SHA256SUMS`)
+- Installing-update toast shows the same progress bar as job rows and cannot be dismissed until success or failure
+- `torrenter update` shows the CLI byte bar while the asset downloads
+- Release binaries use the HTTP Range transfer (gzip/brotli off, exact 206, merge via tmp) into a file beside the running exe, not dest/`.resume` (still a pinned GitHub first hop + `SHA256SUMS`)
 
 ## [3.5.0] - 2026-11-06
 

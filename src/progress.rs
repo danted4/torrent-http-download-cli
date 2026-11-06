@@ -333,6 +333,14 @@ impl ProgressHandle {
         }
     }
 
+    pub fn hidden() -> Self {
+        Self {
+            bar: hidden_bar(1),
+            snapshot: None,
+            announce: false,
+        }
+    }
+
     pub fn gui(total: u64, snapshot: Arc<JobSnapshot>) -> Self {
         let downloaded = snapshot.downloaded.load(Ordering::Relaxed);
         let snap_total = snapshot.total.load(Ordering::Relaxed);

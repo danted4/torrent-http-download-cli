@@ -25,10 +25,29 @@ pub const PART_COUNT: usize = 4;
 const RESUME_DIR_NAME: &str = ".resume";
 const MERGE_CHUNK: usize = 1024 * 1024;
 
+pub(crate) fn range_client(user_agent: &str) -> Result<Client> {
+    Client::builder()
+        .user_agent(user_agent)
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .connect_timeout(Duration::from_secs(20))
+        .read_timeout(Duration::from_secs(60))
+        .gzip(false)
+        .brotli(false)
+        .build()
+        .context("failed to build HTTP client")
+}
+
+#[derive(Clone, Debug)]
+enum PartPlacement {
+    Resume,
+    Beside { stem: String },
+}
+
 #[derive(Clone, Debug)]
 pub struct DownloadLayout {
     pub directory: PathBuf,
     pub part_count: usize,
+    parts: PartPlacement,
 }
 
 impl DownloadLayout {
@@ -36,8 +55,84 @@ impl DownloadLayout {
         Self {
             directory,
             part_count: PART_COUNT,
+            parts: PartPlacement::Resume,
         }
     }
+
+    pub fn beside_file(dest: &Path) -> Self {
+        let stem = dest
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("download")
+            .to_string();
+        let directory = dest
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        Self {
+            directory,
+            part_count: PART_COUNT,
+            parts: PartPlacement::Beside { stem },
+        }
+    }
+}
+
+/// Write `url` to `dest`. Parts sit beside the file (`{dest}.part-N`), never under dest/.resume.
+/// No resume. `max_bytes` is a hard cap. 206 with a mismatched Content-Range total falls back to GET.
+pub(crate) async fn download_file(
+    client: &Client,
+    url: &str,
+    dest: &Path,
+    max_bytes: u64,
+    allow_range: bool,
+    progress: &ProgressHandle,
+) -> Result<()> {
+    let downloaded = Arc::new(AtomicU64::new(0));
+    let layout = DownloadLayout::beside_file(dest);
+    let filename = dest
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("download")
+        .to_string();
+    if let Some(parent) = dest.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .await
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+    }
+    if allow_range {
+        if let Some(total) = probe_range_total(client, url).await {
+            if total > max_bytes {
+                bail!("update asset is too large ({total} bytes)");
+            }
+            if total > 1 {
+                progress.set_length(total);
+                match download_multipart(
+                    client,
+                    url,
+                    &filename,
+                    total,
+                    progress,
+                    &downloaded,
+                    &layout,
+                )
+                .await
+                {
+                    Ok(()) => return Ok(()),
+                    Err(error) if error.downcast_ref::<RangesNotHonored>().is_some() => {
+                        remove_resume_files(&layout, &resume_key(url)).await?;
+                        let _ = fs::remove_file(dest).await;
+                        downloaded.store(0, Ordering::Relaxed);
+                        progress.set_position(0);
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+    }
+    stream_single(client, url, dest, progress, &downloaded, Some(max_bytes)).await
 }
 
 #[derive(Debug)]
@@ -99,19 +194,11 @@ async fn run_url_download(
         bail!("Invalid HTTP(S) URL!");
     }
 
-    let client = Client::builder()
-        .user_agent(concat!(
-            env!("CARGO_PKG_NAME"),
-            "/",
-            env!("CARGO_PKG_VERSION")
-        ))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .connect_timeout(Duration::from_secs(20))
-        .read_timeout(Duration::from_secs(60))
-        .gzip(false)
-        .brotli(false)
-        .build()
-        .context("failed to build HTTP client")?;
+    let client = range_client(concat!(
+        env!("CARGO_PKG_NAME"),
+        "/",
+        env!("CARGO_PKG_VERSION")
+    ))?;
 
     let progress = match snapshot {
         Some(snapshot) => ProgressHandle::gui(1, snapshot),
@@ -169,13 +256,22 @@ async fn run_url_download(
                                 &output_path,
                                 &progress,
                                 &downloaded,
+                                None,
                             )
                             .await
                         }
                         Err(error) => Err(error),
                     }
                 } else {
-                    stream_single(&client, download_url, &output_path, &progress, &downloaded).await
+                    stream_single(
+                        &client,
+                        download_url,
+                        &output_path,
+                        &progress,
+                        &downloaded,
+                        None,
+                    )
+                    .await
                 }
             };
             match transfer.await {
@@ -404,7 +500,10 @@ fn manifest_path(layout: &DownloadLayout, key: &str) -> PathBuf {
 }
 
 fn part_path(layout: &DownloadLayout, key: &str, index: usize) -> PathBuf {
-    resume_directory(layout).join(format!("{key}.part-{index}"))
+    match &layout.parts {
+        PartPlacement::Resume => resume_directory(layout).join(format!("{key}.part-{index}")),
+        PartPlacement::Beside { stem } => layout.directory.join(format!("{stem}.part-{index}")),
+    }
 }
 
 async fn get_resume_manifest(layout: &DownloadLayout, key: &str) -> Option<ResumeManifest> {
@@ -424,7 +523,9 @@ async fn save_resume_manifest(
 }
 
 async fn remove_resume_files(layout: &DownloadLayout, key: &str) -> Result<()> {
-    let _ = fs::remove_file(manifest_path(layout, key)).await;
+    if matches!(layout.parts, PartPlacement::Resume) {
+        let _ = fs::remove_file(manifest_path(layout, key)).await;
+    }
     for index in 0..layout.part_count {
         let _ = fs::remove_file(part_path(layout, key, index)).await;
     }
@@ -442,26 +543,31 @@ async fn download_multipart(
 ) -> Result<()> {
     let key = resume_key(download_url);
     let part_size = total.div_ceil(layout.part_count as u64);
-    let manifest = get_resume_manifest(layout, &key).await;
-    let can_resume = manifest.as_ref().is_some_and(|manifest| {
-        manifest.url == download_url
-            && manifest.size == total
-            && manifest.part_count == layout.part_count
-    });
-    if !can_resume {
+    let resume = matches!(layout.parts, PartPlacement::Resume);
+    if resume {
+        let manifest = get_resume_manifest(layout, &key).await;
+        let can_resume = manifest.as_ref().is_some_and(|manifest| {
+            manifest.url == download_url
+                && manifest.size == total
+                && manifest.part_count == layout.part_count
+        });
+        if !can_resume {
+            remove_resume_files(layout, &key).await?;
+        }
+        save_resume_manifest(
+            layout,
+            &key,
+            &ResumeManifest {
+                url: download_url.to_string(),
+                size: total,
+                part_count: layout.part_count,
+                filename: filename.to_string(),
+            },
+        )
+        .await?;
+    } else {
         remove_resume_files(layout, &key).await?;
     }
-    save_resume_manifest(
-        layout,
-        &key,
-        &ResumeManifest {
-            url: download_url.to_string(),
-            size: total,
-            part_count: layout.part_count,
-            filename: filename.to_string(),
-        },
-    )
-    .await?;
 
     let mut existing_sizes = Vec::with_capacity(layout.part_count);
     for index in 0..layout.part_count {
@@ -626,6 +732,7 @@ async fn download_part(
         progress,
         downloaded,
         Some(expected - existing_size),
+        None,
     )
     .await?;
     file.flush().await?;
@@ -647,16 +754,21 @@ async fn stream_single(
     output_path: &Path,
     progress: &ProgressHandle,
     downloaded: &Arc<AtomicU64>,
+    byte_cap: Option<u64>,
 ) -> Result<()> {
     let response = client
         .get(download_url)
         .send()
         .await
         .context("download request failed")?;
-    if !response.status().is_success() {
-        bail!("Download request failed ({})", response.status());
-    }
+    let response = match response.error_for_status() {
+        Ok(response) => response,
+        Err(error) => return Err(error.into()),
+    };
     if let Some(len) = response.content_length().filter(|len| *len > 0) {
+        if byte_cap.is_some_and(|cap| len > cap) {
+            bail!("update asset is too large ({len} bytes)");
+        }
         progress.set_length(len);
     }
     let mut file = OpenOptions::new()
@@ -666,7 +778,7 @@ async fn stream_single(
         .open(output_path)
         .await
         .with_context(|| format!("failed to create {}", output_path.display()))?;
-    stream_into_file(response, &mut file, progress, downloaded, None).await?;
+    stream_into_file(response, &mut file, progress, downloaded, None, byte_cap).await?;
     file.flush().await?;
     Ok(())
 }
@@ -677,6 +789,7 @@ async fn stream_into_file(
     progress: &ProgressHandle,
     downloaded: &Arc<AtomicU64>,
     max_bytes: Option<u64>,
+    byte_cap: Option<u64>,
 ) -> Result<()> {
     let mut remaining = max_bytes;
     let mut stream = response.bytes_stream();
@@ -699,8 +812,13 @@ async fn stream_into_file(
         if chunk.is_empty() {
             continue;
         }
-        file.write_all(&chunk).await?;
         let n = chunk.len() as u64;
+        if let Some(cap) = byte_cap {
+            if downloaded.load(Ordering::Relaxed) + n > cap {
+                bail!("update asset exceeded size cap ({cap} bytes)");
+            }
+        }
+        file.write_all(&chunk).await?;
         downloaded.fetch_add(n, Ordering::Relaxed);
         progress.inc(n);
         let next = downloaded.load(Ordering::Relaxed);
@@ -787,6 +905,7 @@ mod tests {
         send_head_length: bool,
         disposition: Option<String>,
         shorten_range_to: Option<usize>,
+        mismatch_range_total: Option<u64>,
         range_starts: Arc<tokio::sync::Mutex<Vec<u64>>>,
         get_count: Arc<AtomicUsize>,
         head_count: Arc<AtomicUsize>,
@@ -883,6 +1002,13 @@ mod tests {
                     Some(max) if slice.len() > max => &slice[..max],
                     _ => slice,
                 };
+                let reported_total = if start == 0 && end == 0 {
+                    config.body.len() as u64
+                } else {
+                    config
+                        .mismatch_range_total
+                        .unwrap_or(config.body.len() as u64)
+                };
                 return write_http(
                     &mut stream,
                     "HTTP/1.1 206 Partial Content",
@@ -890,7 +1016,7 @@ mod tests {
                         ("Content-Length", sent.len().to_string()),
                         (
                             "Content-Range",
-                            format!("bytes {start}-{end}/{}", config.body.len()),
+                            format!("bytes {start}-{end}/{reported_total}"),
                         ),
                         ("Accept-Ranges", "bytes".into()),
                     ],
@@ -967,10 +1093,7 @@ mod tests {
     }
 
     fn layout(dir: &tempfile::TempDir) -> DownloadLayout {
-        DownloadLayout {
-            directory: dir.path().to_path_buf(),
-            part_count: PART_COUNT,
-        }
+        DownloadLayout::in_dir(dir.path().to_path_buf())
     }
 
     fn config(body: Vec<u8>, honor_ranges: bool, send_head_length: bool) -> ServerConfig {
@@ -980,10 +1103,24 @@ mod tests {
             send_head_length,
             disposition: None,
             shorten_range_to: None,
+            mismatch_range_total: None,
             range_starts: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             get_count: Arc::new(AtomicUsize::new(0)),
             head_count: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    async fn download_staging(url: &str, dest: &Path, max_bytes: u64) -> Result<()> {
+        let client = range_client("torrenter-test/0").unwrap();
+        download_file(
+            &client,
+            url,
+            dest,
+            max_bytes,
+            true,
+            &ProgressHandle::hidden(),
+        )
+        .await
     }
 
     #[test]
@@ -1369,5 +1506,117 @@ mod tests {
         let resume = dir.path().join(RESUME_DIR_NAME);
         !resume.join(format!("{key}.json")).exists()
             && (0..PART_COUNT).all(|index| !resume.join(format!("{key}.part-{index}")).exists())
+    }
+
+    #[tokio::test]
+    async fn staging_range_download_merges_beside_dest() {
+        let body = pattern_body(256);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join(".torrenter.update");
+        let server = config(body.clone(), true, true);
+        let ranges = Arc::clone(&server.range_starts);
+        let test_server = spawn_server(server).await;
+
+        download_staging(&test_server.url, &dest, 1024)
+            .await
+            .unwrap();
+
+        assert_eq!(fs::read(&dest).await.unwrap(), body);
+        assert!(!dir.path().join(RESUME_DIR_NAME).exists());
+        for index in 0..PART_COUNT {
+            assert!(!dest
+                .with_file_name(format!(".torrenter.update.part-{index}"))
+                .exists());
+        }
+        let starts = ranges.lock().await.clone();
+        for start in [0_u64, 64, 128, 192] {
+            assert!(
+                starts.contains(&start),
+                "missing range start {start}, got {starts:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn staging_falls_back_when_server_ignores_ranges() {
+        let body = pattern_body(200);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join(".torrenter.update");
+        let server = config(body.clone(), false, true);
+        let test_server = spawn_server(server).await;
+
+        download_staging(&test_server.url, &dest, 1024)
+            .await
+            .unwrap();
+        assert_eq!(fs::read(&dest).await.unwrap(), body);
+        assert!(!dir.path().join(RESUME_DIR_NAME).exists());
+    }
+
+    #[tokio::test]
+    async fn staging_truncated_range_body_fails() {
+        let body = pattern_body(256);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join(".torrenter.update");
+        let mut server = config(body, true, true);
+        server.shorten_range_to = Some(8);
+        let test_server = spawn_server(server).await;
+
+        let err = download_staging(&test_server.url, &dest, 1024)
+            .await
+            .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("incomplete"),
+            "expected incomplete part, got {message}"
+        );
+        let mut found_short = false;
+        for index in 0..PART_COUNT {
+            let path = dest.with_file_name(format!(".torrenter.update.part-{index}"));
+            let Ok(meta) = fs::metadata(&path).await else {
+                continue;
+            };
+            assert!(
+                meta.len() < 64,
+                "part should not be zero-padded, index={index} len={}",
+                meta.len()
+            );
+            found_short = true;
+        }
+        assert!(found_short, "expected at least one short staging part");
+    }
+
+    #[tokio::test]
+    async fn staging_content_range_mismatch_falls_back_to_get() {
+        let body = pattern_body(256);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join(".torrenter.update");
+        let mut server = config(body.clone(), true, true);
+        server.mismatch_range_total = Some(9999);
+        let test_server = spawn_server(server).await;
+
+        download_staging(&test_server.url, &dest, 10 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(fs::read(&dest).await.unwrap(), body);
+        for index in 0..PART_COUNT {
+            assert!(!dest
+                .with_file_name(format!(".torrenter.update.part-{index}"))
+                .exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn staging_rejects_oversize_content_length() {
+        let body = pattern_body(200);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join(".torrenter.update");
+        let server = config(body, false, true);
+        let test_server = spawn_server(server).await;
+
+        let err = download_staging(&test_server.url, &dest, 50)
+            .await
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("too large"), "{err:#}");
+        assert!(!dest.exists());
     }
 }

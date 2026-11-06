@@ -1,20 +1,17 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use reqwest::header::{CONTENT_RANGE, RANGE};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::task::JoinSet;
+use tokio::io::AsyncReadExt;
 use url::Url;
 
 use crate::http::PART_COUNT;
 use crate::identity::{self, AppKind, VERSION, VERSION_TAG};
-use crate::progress::JobSnapshot;
+use crate::progress::{JobSnapshot, ProgressHandle};
 
 const USER_AGENT: &str = concat!("torrenter/", env!("CARGO_PKG_VERSION"));
 const LATEST_URL: &str = "https://api.github.com/repos/danted4/torrenter/releases/latest";
@@ -198,6 +195,7 @@ fn leftover_update_paths(current: &Path) -> Vec<PathBuf> {
     let mut paths = vec![
         old_binary_path(current),
         current.with_file_name(format!(".{name}.update")),
+        current.with_file_name(format!("..{name}.update.merge.tmp")),
         current.with_file_name(format!(".{name}.sha256sums")),
     ];
     for index in 0..PART_COUNT {
@@ -494,12 +492,19 @@ pub async fn check_latest(kind: AppKind) -> Result<Option<AvailableUpdate>> {
 }
 
 pub async fn install_update(update: &AvailableUpdate) -> Result<PathBuf> {
-    install_update_reported(update, None).await
+    install_with_progress(update, ProgressHandle::cli(1)).await
 }
 
 pub async fn install_update_reported(
     update: &AvailableUpdate,
-    progress: Option<Arc<JobSnapshot>>,
+    snapshot: Arc<JobSnapshot>,
+) -> Result<PathBuf> {
+    install_with_progress(update, ProgressHandle::gui(1, snapshot)).await
+}
+
+async fn install_with_progress(
+    update: &AvailableUpdate,
+    progress: ProgressHandle,
 ) -> Result<PathBuf> {
     if !is_pinned_update(update) {
         bail!("refusing to install an update from outside danted4/torrenter");
@@ -519,19 +524,17 @@ pub async fn install_update_reported(
             .and_then(|name| name.to_str())
             .unwrap_or("torrenter")
     ));
+    progress.set_title(&update.asset_name);
+    progress.set_status("starting");
+    progress.set_position(0);
     let install = async {
-        if let Some(snapshot) = &progress {
-            snapshot.set_status("starting");
-            snapshot.downloaded.store(0, Ordering::Relaxed);
-            snapshot.total.store(0, Ordering::Relaxed);
-        }
         download_to_file(
             &update.checksums_url,
             &sums_path,
             MAX_CHECKSUMS_BYTES,
             &update.tag,
             CHECKSUMS_NAME,
-            None,
+            &ProgressHandle::hidden(),
             false,
         )
         .await?;
@@ -539,24 +542,19 @@ pub async fn install_update_reported(
         let expected = hash_for_asset(&sums, &update.asset_name).with_context(|| {
             format!("{CHECKSUMS_NAME} has no SHA-256 for {}", update.asset_name)
         })?;
-        if let Some(snapshot) = &progress {
-            snapshot.set_status("downloading");
-            snapshot.downloaded.store(0, Ordering::Relaxed);
-            snapshot.total.store(0, Ordering::Relaxed);
-        }
+        progress.set_status("downloading");
+        progress.set_position(0);
         download_to_file(
             &update.url,
             &tmp,
             MAX_UPDATE_BYTES,
             &update.tag,
             &update.asset_name,
-            progress.as_ref(),
+            &progress,
             true,
         )
         .await?;
-        if let Some(snapshot) = &progress {
-            snapshot.set_status("verifying");
-        }
+        progress.set_status("verifying");
         let actual = sha256_file(&tmp).await?;
         if !hashes_match(&expected, &actual) {
             bail!(
@@ -573,14 +571,13 @@ pub async fn install_update_reported(
         }
         replace_executable(&current, &tmp)?;
         refresh_installed_app(&current, &update.tag);
-        if let Some(snapshot) = &progress {
-            snapshot.mark_finished();
-        }
+        progress.finish();
         Ok(current.clone())
     }
     .await;
     let _ = std::fs::remove_file(&sums_path);
     if install.is_err() {
+        progress.finish_and_clear();
         let _ = std::fs::remove_file(&tmp);
     }
     install
@@ -614,7 +611,7 @@ async fn download_to_file(
     max_bytes: u64,
     tag: &str,
     asset_name: &str,
-    progress: Option<&Arc<JobSnapshot>>,
+    progress: &ProgressHandle,
     allow_range: bool,
 ) -> Result<()> {
     if !is_repo_release_asset_url(url, tag, asset_name) {
@@ -622,13 +619,12 @@ async fn download_to_file(
     }
     // GitHub 302s this pinned github.com URL to objects.githubusercontent.com.
     // Following that redirect is required; the first hop is what we pin.
-    let client = update_client()?;
+    let client = crate::http::range_client(USER_AGENT)?;
     let mut last_error = None;
     for attempt in 0..UPDATE_DOWNLOAD_ATTEMPTS {
-        if let Some(snapshot) = progress {
-            snapshot.downloaded.store(0, Ordering::Relaxed);
-        }
-        match download_to_file_once(&client, url, dest, max_bytes, progress, allow_range).await {
+        progress.set_position(0);
+        match crate::http::download_file(&client, url, dest, max_bytes, allow_range, progress).await
+        {
             Ok(()) => return Ok(()),
             Err(error)
                 if attempt + 1 < UPDATE_DOWNLOAD_ATTEMPTS && is_retryable_download(&error) =>
@@ -644,78 +640,6 @@ async fn download_to_file(
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("failed to download release asset")))
 }
 
-async fn download_to_file_once(
-    client: &reqwest::Client,
-    url: &str,
-    dest: &Path,
-    max_bytes: u64,
-    progress: Option<&Arc<JobSnapshot>>,
-    allow_range: bool,
-) -> Result<()> {
-    if !allow_range {
-        return download_single_asset(client, url, dest, max_bytes, progress).await;
-    }
-    let probe = match client.get(url).header(RANGE, "bytes=0-0").send().await {
-        Ok(response) => response,
-        Err(error) if is_retryable_reqwest(&error) => return Err(error.into()),
-        Err(error) => {
-            return Err(anyhow::Error::from(error).context("failed to download release asset"));
-        }
-    };
-    let probe = match probe.error_for_status() {
-        Ok(response) => response,
-        Err(error) if is_retryable_reqwest(&error) => return Err(error.into()),
-        Err(error) => {
-            return Err(anyhow::Error::from(error).context("failed to download release asset"));
-        }
-    };
-    let ranged_total = (probe.status() == StatusCode::PARTIAL_CONTENT)
-        .then(|| {
-            probe
-                .headers()
-                .get(CONTENT_RANGE)
-                .and_then(parse_content_range_total)
-        })
-        .flatten();
-    drop(probe);
-    if let Some(total) = ranged_total {
-        if total > max_bytes {
-            bail!("update asset is too large ({total} bytes)");
-        }
-        if total > 1 {
-            match download_ranged_asset(client, url, dest, total, max_bytes, progress).await {
-                Ok(()) => return Ok(()),
-                Err(error) if error.downcast_ref::<RangesNotHonored>().is_some() => {
-                    clear_update_parts(dest).await;
-                    let _ = tokio::fs::remove_file(dest).await;
-                }
-                Err(error) => return Err(error),
-            }
-        }
-    }
-    download_single_asset(client, url, dest, max_bytes, progress).await
-}
-
-#[derive(Debug)]
-struct RangesNotHonored;
-
-impl std::fmt::Display for RangesNotHonored {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("release CDN did not honor ranged requests")
-    }
-}
-
-impl std::error::Error for RangesNotHonored {}
-
-fn parse_content_range_total(value: &reqwest::header::HeaderValue) -> Option<u64> {
-    let text = value.to_str().ok()?;
-    let total = text.rsplit('/').next()?;
-    if total == "*" {
-        return None;
-    }
-    total.parse().ok().filter(|size| *size > 0)
-}
-
 fn update_part_path(dest: &Path, index: usize) -> PathBuf {
     dest.with_file_name(format!(
         "{}.part-{index}",
@@ -729,189 +653,9 @@ async fn clear_update_parts(dest: &Path) {
     for index in 0..PART_COUNT {
         let _ = tokio::fs::remove_file(update_part_path(dest, index)).await;
     }
-}
-
-fn report_progress(progress: Option<&Arc<JobSnapshot>>, downloaded: u64, total: u64) {
-    let Some(snapshot) = progress else {
-        return;
-    };
-    if total > 0 {
-        snapshot.total.store(total, Ordering::Relaxed);
+    if let Some(name) = dest.file_name().and_then(|name| name.to_str()) {
+        let _ = tokio::fs::remove_file(dest.with_file_name(format!(".{name}.merge.tmp"))).await;
     }
-    snapshot.downloaded.store(downloaded, Ordering::Relaxed);
-}
-
-async fn download_single_asset(
-    client: &reqwest::Client,
-    url: &str,
-    dest: &Path,
-    max_bytes: u64,
-    progress: Option<&Arc<JobSnapshot>>,
-) -> Result<()> {
-    use futures_util::StreamExt;
-
-    let response = match client.get(url).send().await {
-        Ok(response) => response,
-        Err(error) if is_retryable_reqwest(&error) => return Err(error.into()),
-        Err(error) => {
-            return Err(anyhow::Error::from(error).context("failed to download release asset"));
-        }
-    };
-    let response = match response.error_for_status() {
-        Ok(response) => response,
-        Err(error) if is_retryable_reqwest(&error) => return Err(error.into()),
-        Err(error) => {
-            return Err(anyhow::Error::from(error).context("failed to download release asset"));
-        }
-    };
-    let total = response.content_length().unwrap_or(0);
-    if total > max_bytes {
-        bail!("update asset is too large ({total} bytes)");
-    }
-    report_progress(progress, 0, total);
-    let mut file = tokio::fs::File::create(dest).await?;
-    let mut stream = response.bytes_stream();
-    let mut written = 0u64;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.context("truncated update download")?;
-        written += chunk.len() as u64;
-        if written > max_bytes {
-            drop(file);
-            let _ = tokio::fs::remove_file(dest).await;
-            bail!("update asset exceeded size cap ({max_bytes} bytes)");
-        }
-        file.write_all(&chunk).await?;
-        report_progress(progress, written, total);
-    }
-    file.flush().await?;
-    Ok(())
-}
-
-async fn download_ranged_asset(
-    client: &reqwest::Client,
-    url: &str,
-    dest: &Path,
-    total: u64,
-    max_bytes: u64,
-    progress: Option<&Arc<JobSnapshot>>,
-) -> Result<()> {
-    if total == 0 || total > max_bytes {
-        bail!("update asset is too large ({total} bytes)");
-    }
-    report_progress(progress, 0, total);
-    let downloaded = Arc::new(AtomicU64::new(0));
-    let part_size = total.div_ceil(PART_COUNT as u64);
-    let mut tasks = JoinSet::new();
-    for index in 0..PART_COUNT {
-        let start = part_size * index as u64;
-        if start >= total {
-            continue;
-        }
-        let end = (start + part_size - 1).min(total - 1);
-        let client = client.clone();
-        let url = url.to_string();
-        let path = update_part_path(dest, index);
-        let downloaded = Arc::clone(&downloaded);
-        tasks.spawn(async move {
-            download_update_part(&client, &url, &path, start, end, downloaded).await
-        });
-    }
-    loop {
-        tokio::select! {
-            joined = tasks.join_next() => {
-                let Some(joined) = joined else {
-                    break;
-                };
-                match joined {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        tasks.abort_all();
-                        clear_update_parts(dest).await;
-                        return Err(error);
-                    }
-                    Err(join_error) if join_error.is_cancelled() => {}
-                    Err(join_error) => {
-                        clear_update_parts(dest).await;
-                        return Err(join_error).context("update part task failed");
-                    }
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_millis(120)) => {}
-        }
-        report_progress(progress, downloaded.load(Ordering::Relaxed), total);
-    }
-    let mut out = tokio::fs::File::create(dest).await?;
-    let mut merged = 0u64;
-    for index in 0..PART_COUNT {
-        let path = update_part_path(dest, index);
-        if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
-            continue;
-        }
-        let mut part = tokio::fs::File::open(&path).await?;
-        let mut buffer = vec![0u8; 64 * 1024];
-        loop {
-            let n = part.read(&mut buffer).await?;
-            if n == 0 {
-                break;
-            }
-            merged += n as u64;
-            if merged > max_bytes {
-                drop(out);
-                let _ = tokio::fs::remove_file(dest).await;
-                clear_update_parts(dest).await;
-                bail!("update asset exceeded size cap ({max_bytes} bytes)");
-            }
-            out.write_all(&buffer[..n]).await?;
-        }
-        let _ = tokio::fs::remove_file(&path).await;
-    }
-    out.flush().await?;
-    if merged != total {
-        bail!("update parts did not add up to {total} bytes");
-    }
-    report_progress(progress, merged, total);
-    Ok(())
-}
-
-async fn download_update_part(
-    client: &reqwest::Client,
-    url: &str,
-    dest: &Path,
-    start: u64,
-    end: u64,
-    downloaded: Arc<AtomicU64>,
-) -> Result<()> {
-    use futures_util::StreamExt;
-
-    let expected = end - start + 1;
-    let response = client
-        .get(url)
-        .header(RANGE, format!("bytes={start}-{end}"))
-        .send()
-        .await
-        .context("ranged update request failed")?;
-    if response.status() != StatusCode::PARTIAL_CONTENT {
-        bail!(RangesNotHonored);
-    }
-    let mut file = tokio::fs::File::create(dest).await?;
-    let mut stream = response.bytes_stream();
-    let mut written = 0u64;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.context("truncated update part")?;
-        written += chunk.len() as u64;
-        if written > expected {
-            drop(file);
-            let _ = tokio::fs::remove_file(dest).await;
-            bail!(RangesNotHonored);
-        }
-        file.write_all(&chunk).await?;
-        downloaded.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-    }
-    file.flush().await?;
-    if written != expected {
-        bail!(RangesNotHonored);
-    }
-    Ok(())
 }
 
 async fn sha256_file(path: &Path) -> Result<String> {
@@ -1322,6 +1066,9 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *torrenter-gui-
         assert!(leftovers
             .iter()
             .any(|path| path.ends_with(".torrenter-gui.update.part-0")));
+        assert!(leftovers
+            .iter()
+            .any(|path| path.ends_with("..torrenter-gui.update.merge.tmp")));
     }
 
     #[test]

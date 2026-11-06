@@ -77,7 +77,7 @@ This tool downloads untrusted content the user asked for. Do not weaken path, UR
 
 - Magnet: only `magnet:?xt=urn:` with 32-char base32 or 40-char hex info hash (`validate.rs`). No `.torrent` file parse.
 - HTTP filenames come from `Content-Disposition` or a **single** URL path segment; `.` / `..` become `download.bin`. Never write outside the configured dest / info-hash / `.resume` trees. Do not fall back to `./downloads`.
-- Updater (`src/update.rs`) must keep: pinned first hop `https://github.com/danted4/torrenter/releases/download/<tag>/<name>` with tag matching the release; SHA-256 against `SHA256SUMS`; size caps; timeouts; CLI vs GUI asset prefix. The binary may split into four Range parts beside the running exe (not the HTTP job dest/resume tree); fall back to a single GET if the CDN ignores Range. `SHA256SUMS` is same-publisher integrity, not a signature — do not claim otherwise.
+- Updater (`src/update.rs`) must keep: pinned first hop `https://github.com/danted4/torrenter/releases/download/<tag>/<name>` with tag matching the release; SHA-256 against `SHA256SUMS`; size caps; timeouts; CLI vs GUI asset prefix. Binary bytes go through `http::download_file` (same Range probe / 206 / merge-tmp helpers, gzip/brotli off) into a staging file beside the running exe — not dest/`.resume`, no resume. Fall back to a single GET if the CDN ignores Range. `SHA256SUMS` is same-publisher integrity, not a signature — do not claim otherwise.
 - Auto-update defaults **off**. Do not enable it by default in config or CI.
 - Do not add credentials, tokens, or tracking. Do not expand the updater to arbitrary hosts.
 

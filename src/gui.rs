@@ -1616,6 +1616,7 @@ impl GuiApp {
                         } else {
                             palette.dim
                         };
+                        let installing = toast.progress.is_some();
                         let response = egui::Frame::NONE
                             .fill(fill)
                             .stroke(Stroke::new(1.0_f32, color))
@@ -1636,8 +1637,12 @@ impl GuiApp {
                                 }
                             })
                             .response
-                            .on_hover_cursor(egui::CursorIcon::PointingHand);
-                        if response.clicked() {
+                            .on_hover_cursor(if installing {
+                                egui::CursorIcon::Default
+                            } else {
+                                egui::CursorIcon::PointingHand
+                            });
+                        if !installing && response.clicked() {
                             clicked = Some(toast.id);
                         }
                     }
@@ -2435,7 +2440,7 @@ fn worker_loop(rx: Receiver<WorkerCmd>, tx: Sender<WorkerEvent>) {
                     }
                 },
                 WorkerCmd::Install { update, snapshot } => {
-                    match update::install_update_reported(&update, Some(snapshot)).await {
+                    match update::install_update_reported(&update, snapshot).await {
                         Ok(_) => {
                             let _ = tx.send(WorkerEvent::Installed(update.tag));
                         }

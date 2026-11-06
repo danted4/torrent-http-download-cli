@@ -13,6 +13,7 @@ All notable changes to this project are documented here.
 
 - Theme and tint live in the cog; the auto-update slider stays on the header beside it
 - `glass_tint` is stored in `config.json` (40–210, default 60% of that range)
+- Native fullscreen (macOS/Windows) locks tint at 100% without saving that override
 
 ## [3.4.3] - 2026-11-05
 

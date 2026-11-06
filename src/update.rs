@@ -774,6 +774,15 @@ pub fn glass_tint_from_percent(percent: u8) -> u8 {
     GLASS_TINT_MIN + (percent * span / 100) as u8
 }
 
+/// Paint tint: native fullscreen uses 100%; otherwise the saved windowed value.
+pub fn effective_glass_tint(saved: u8, fullscreen: bool) -> u8 {
+    if fullscreen {
+        glass_tint_from_percent(100)
+    } else {
+        normalize_glass_tint(saved)
+    }
+}
+
 pub fn set_glass_tint(value: u8) -> Result<AppConfig> {
     let mut config = load_config();
     config.glass_tint = normalize_glass_tint(value);
@@ -887,6 +896,18 @@ mod tests {
         let parsed: AppConfig =
             serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
         assert_eq!(parsed.glass_tint, 90);
+    }
+
+    #[test]
+    fn fullscreen_uses_max_tint_without_changing_saved() {
+        let saved = glass_tint_from_percent(60);
+        assert_eq!(effective_glass_tint(saved, true), GLASS_TINT_MAX);
+        assert_eq!(
+            effective_glass_tint(saved, true),
+            glass_tint_from_percent(100)
+        );
+        assert_eq!(effective_glass_tint(saved, false), saved);
+        assert_eq!(saved, GLASS_TINT_DEFAULT);
     }
 
     #[test]

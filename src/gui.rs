@@ -326,6 +326,7 @@ struct GuiApp {
     applied_glass_tint: u8,
     settings_open: bool,
     glass_applied: bool,
+    viewport_fullscreen: bool,
 }
 
 pub fn run() -> eframe::Result<()> {
@@ -393,6 +394,7 @@ impl GuiApp {
             applied_glass_tint: glass_tint,
             settings_open: false,
             glass_applied: false,
+            viewport_fullscreen: false,
         };
         if let Some(error) = launch_error {
             app.toast_fatal(error);
@@ -405,7 +407,10 @@ impl GuiApp {
     fn surface(&self, color: Color32) -> Color32 {
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
-            crate::glass::tint(color, self.glass_tint)
+            crate::glass::tint(
+                color,
+                update::effective_glass_tint(self.glass_tint, self.viewport_fullscreen),
+            )
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
@@ -825,6 +830,7 @@ impl GuiApp {
 impl eframe::App for GuiApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         let _ = jobs::save_jobs(&self.persisted_jobs());
+        // Windowed value only; fullscreen never mutates `glass_tint`.
         let _ = update::set_glass_tint(self.glass_tint);
     }
 
@@ -841,10 +847,12 @@ impl eframe::App for GuiApp {
             crate::glass::apply(frame);
             self.glass_applied = true;
         }
-        if self.applied_theme != self.theme || self.applied_glass_tint != self.glass_tint {
+        self.viewport_fullscreen = viewport_is_fullscreen(ctx);
+        let paint_tint = update::effective_glass_tint(self.glass_tint, self.viewport_fullscreen);
+        if self.applied_theme != self.theme || self.applied_glass_tint != paint_tint {
             self.apply_theme(ctx);
             self.applied_theme = self.theme;
-            self.applied_glass_tint = self.glass_tint;
+            self.applied_glass_tint = paint_tint;
         }
         let palette = theme(self.theme);
         ctx.request_repaint_after(Duration::from_millis(200));
@@ -1426,20 +1434,27 @@ impl GuiApp {
                 ui.add_space(10.0);
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 {
+                    let locked = self.viewport_fullscreen;
+                    let shown = update::effective_glass_tint(self.glass_tint, locked);
                     ui.horizontal(|ui| {
                         ui.label(mono("tint", 12.0, palette.dim));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(mono(
-                                format!("{}%", update::glass_tint_percent(self.glass_tint)),
+                                format!("{}%", update::glass_tint_percent(shown)),
                                 12.0,
                                 palette.fg,
                             ));
                         });
                     });
                     ui.add_space(4.0);
-                    let response = tint_slider(ui, &mut self.glass_tint, palette);
-                    if response.drag_stopped() || (response.changed() && !response.dragged()) {
-                        persist_tint = true;
+                    if locked {
+                        let mut locked_tint = shown;
+                        tint_slider(ui, &mut locked_tint, palette, true);
+                    } else {
+                        let response = tint_slider(ui, &mut self.glass_tint, palette, false);
+                        if response.drag_stopped() || (response.changed() && !response.dragged()) {
+                            persist_tint = true;
+                        }
                     }
                 }
             });
@@ -1685,16 +1700,24 @@ fn paint_leech(painter: &egui::Painter, rect: egui::Rect, color: Color32) {
     );
 }
 
-fn tint_slider(ui: &mut egui::Ui, value: &mut u8, palette: Theme) -> egui::Response {
+fn viewport_is_fullscreen(ctx: &egui::Context) -> bool {
+    ctx.input(|input| input.viewport().fullscreen == Some(true))
+}
+
+fn tint_slider(ui: &mut egui::Ui, value: &mut u8, palette: Theme, locked: bool) -> egui::Response {
     let min = update::GLASS_TINT_MIN;
     let max = update::GLASS_TINT_MAX;
     let knob_r = 5.0_f32;
     let width = ui.available_width().max(1.0);
-    let (rect, mut response) =
-        ui.allocate_exact_size(egui::vec2(width, 22.0), Sense::click_and_drag());
+    let sense = if locked {
+        Sense::hover()
+    } else {
+        Sense::click_and_drag()
+    };
+    let (rect, mut response) = ui.allocate_exact_size(egui::vec2(width, 22.0), sense);
     let track = rect.shrink2(egui::vec2(knob_r, 0.0));
     let span = track.width().max(1.0);
-    if response.clicked() || response.dragged() {
+    if !locked && (response.clicked() || response.dragged()) {
         if let Some(pointer) = response.interact_pointer_pos() {
             let t = ((pointer.x - track.left()) / span).clamp(0.0, 1.0);
             let next = if t <= 0.0 {
@@ -1722,8 +1745,12 @@ fn tint_slider(ui: &mut egui::Ui, value: &mut u8, palette: Theme) -> egui::Respo
         [knob, egui::pos2(track.right(), y)],
         Stroke::new(1.0_f32, palette.dim),
     );
-    painter.circle_filled(knob, knob_r, palette.fg);
-    click_cursor(response).on_hover_text("how heavy the theme wash sits on the blur")
+    painter.circle_filled(knob, knob_r, if locked { palette.dim } else { palette.fg });
+    if locked {
+        response.on_hover_text("tint is locked at 100% in fullscreen")
+    } else {
+        click_cursor(response).on_hover_text("how heavy the theme wash sits on the blur")
+    }
 }
 
 fn settings_cog(ui: &mut egui::Ui, palette: Theme, open: bool) -> egui::Response {

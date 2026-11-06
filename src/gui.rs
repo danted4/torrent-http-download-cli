@@ -20,6 +20,9 @@ use crate::torrent::{
 use crate::update::{self, AvailableUpdate};
 use crate::validate::{is_valid_download_url, is_valid_magnet_url};
 
+const WINDOW_INNER: [f32; 2] = [960.0, 580.0];
+const WINDOW_MIN: [f32; 2] = [760.0, 440.0];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ThemeId {
     Phosphor,
@@ -349,8 +352,8 @@ pub fn run() -> eframe::Result<()> {
     let viewport = egui::ViewportBuilder::default()
         .with_app_id("torrenter")
         .with_title(identity::banner())
-        .with_inner_size([960.0, 580.0])
-        .with_min_inner_size([760.0, 440.0])
+        .with_inner_size(WINDOW_INNER)
+        .with_min_inner_size(WINDOW_MIN)
         .with_icon(crate::icon::app_icon());
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let viewport = viewport.with_transparent(true);
@@ -886,6 +889,8 @@ impl eframe::App for GuiApp {
             crate::glass::apply(frame);
             self.glass_applied = true;
         }
+        #[cfg(target_os = "windows")]
+        repair_collapsed_viewport(ctx);
         self.viewport_fullscreen = viewport_is_fullscreen(ctx);
         let paint_tint = update::effective_glass_tint(self.glass_tint, self.viewport_fullscreen);
         if self.applied_theme != self.theme || self.applied_glass_tint != paint_tint {
@@ -1776,6 +1781,36 @@ fn viewport_is_fullscreen(ctx: &egui::Context) -> bool {
     ctx.input(|input| input.viewport().fullscreen == Some(true))
 }
 
+/// Win11 + acrylic flyout backdrop can restore a minimized window as a tiny
+/// shadowed pill. Push it back to the launch size when that happens.
+#[cfg(any(test, target_os = "windows"))]
+fn collapsed_window_needs_restore(minimized: bool, fullscreen: bool, inner: Option<Vec2>) -> bool {
+    if minimized || fullscreen {
+        return false;
+    }
+    let Some(size) = inner else {
+        return false;
+    };
+    size.x + 0.5 < WINDOW_MIN[0] || size.y + 0.5 < WINDOW_MIN[1]
+}
+
+#[cfg(target_os = "windows")]
+fn repair_collapsed_viewport(ctx: &egui::Context) {
+    let (minimized, fullscreen, inner) = ctx.input(|input| {
+        let viewport = input.viewport();
+        (
+            viewport.minimized == Some(true),
+            viewport.fullscreen == Some(true),
+            viewport.inner_rect.map(|rect| rect.size()),
+        )
+    });
+    if !collapsed_window_needs_restore(minimized, fullscreen, inner) {
+        return;
+    }
+    ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::from(WINDOW_MIN)));
+    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::from(WINDOW_INNER)));
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn tint_slider(ui: &mut egui::Ui, value: &mut u8, palette: Theme, locked: bool) -> egui::Response {
     let min = update::GLASS_TINT_MIN;
@@ -2520,6 +2555,31 @@ mod tests {
         assert_eq!(Mode::Http.toggle(), Mode::Magnet);
         assert_eq!(Mode::Magnet.label(), "MAGNET");
         assert_eq!(Mode::Http.label(), "HTTP");
+    }
+
+    #[test]
+    fn collapsed_restore_ignores_min_and_fullscreen() {
+        assert!(!collapsed_window_needs_restore(
+            true,
+            false,
+            Some(Vec2::new(40.0, 80.0))
+        ));
+        assert!(!collapsed_window_needs_restore(
+            false,
+            true,
+            Some(Vec2::new(40.0, 80.0))
+        ));
+        assert!(!collapsed_window_needs_restore(false, false, None));
+        assert!(!collapsed_window_needs_restore(
+            false,
+            false,
+            Some(Vec2::from(WINDOW_INNER))
+        ));
+        assert!(collapsed_window_needs_restore(
+            false,
+            false,
+            Some(Vec2::new(40.0, 80.0))
+        ));
     }
 
     #[test]

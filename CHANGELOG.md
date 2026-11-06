@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [3.5.3] - 2026-11-06
+
+### Fixed
+
+- Windows 11 uses light Mica (main-window backdrop). Dark Mica in 3.5.1 made 0% tint too dark; Win11 acrylic is a flyout type and could restore from the taskbar as a tiny shadowed pill
+- A collapsed Windows restore below the minimum size is pushed back to the launch size
+
 ## [3.5.2] - 2026-11-06
 
 ### Added

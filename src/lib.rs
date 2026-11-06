@@ -8,6 +8,8 @@ pub mod update;
 pub mod validate;
 
 #[cfg(feature = "gui")]
+mod glass;
+#[cfg(feature = "gui")]
 pub mod gui;
 #[cfg(feature = "gui")]
 pub mod icon;

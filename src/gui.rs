@@ -322,17 +322,25 @@ struct GuiApp {
     job_query: String,
     persist_at: Instant,
     saved_fingerprint: String,
+    glass_tint: u8,
+    applied_glass_tint: u8,
+    settings_open: bool,
+    glass_applied: bool,
+    viewport_fullscreen: bool,
 }
 
 pub fn run() -> eframe::Result<()> {
     update::cleanup_replaced_binary();
+    let viewport = egui::ViewportBuilder::default()
+        .with_app_id("torrenter")
+        .with_title(identity::banner())
+        .with_inner_size([960.0, 580.0])
+        .with_min_inner_size([760.0, 440.0])
+        .with_icon(crate::icon::app_icon());
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let viewport = viewport.with_transparent(true);
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_app_id("torrenter")
-            .with_title(identity::banner())
-            .with_inner_size([960.0, 580.0])
-            .with_min_inner_size([760.0, 440.0])
-            .with_icon(crate::icon::app_icon()),
+        viewport,
         // Hyprland (and other Linux compositors) ping the GUI thread. vsync
         // can block that thread in swap buffers so the ping is missed and the
         // shell shows "Application Not Responding".
@@ -355,6 +363,7 @@ impl GuiApp {
         let auto_update = config.auto_update;
         let seed = config.seed;
         let theme = ThemeId::from_config(&config.theme);
+        let glass_tint = update::normalize_glass_tint(config.glass_tint);
         let dest = paths::effective_dir(&config);
         let launch_error = paths::ensure_dir(&dest)
             .err()
@@ -381,6 +390,11 @@ impl GuiApp {
             job_query: String::new(),
             persist_at: Instant::now(),
             saved_fingerprint: String::new(),
+            glass_tint,
+            applied_glass_tint: glass_tint,
+            settings_open: false,
+            glass_applied: false,
+            viewport_fullscreen: false,
         };
         if let Some(error) = launch_error {
             app.toast_fatal(error);
@@ -388,6 +402,24 @@ impl GuiApp {
         app.hydrate_jobs();
         app.apply_theme(&cc.egui_ctx);
         app
+    }
+
+    fn surface(&self, color: Color32) -> Color32 {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            crate::glass::tint(
+                color,
+                update::effective_glass_tint(self.glass_tint, self.viewport_fullscreen),
+            )
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            color
+        }
+    }
+
+    fn card_fill(&self, color: Color32) -> Color32 {
+        Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 236)
     }
 
     fn hydrate_jobs(&mut self) {
@@ -504,17 +536,24 @@ impl GuiApp {
         let palette = theme(self.theme);
         let mut visuals = egui::Visuals::dark();
         visuals.override_text_color = Some(palette.fg);
-        visuals.panel_fill = palette.bg;
-        visuals.window_fill = palette.bg;
-        visuals.extreme_bg_color = palette.row;
-        visuals.faint_bg_color = palette.row_alt;
-        visuals.widgets.inactive.bg_fill = palette.row;
-        visuals.widgets.hovered.bg_fill = palette.row_alt;
-        visuals.widgets.active.bg_fill = palette.row_alt;
-        visuals.widgets.open.bg_fill = palette.row_alt;
+        visuals.panel_fill = self.surface(palette.bg);
+        visuals.window_fill = self.surface(palette.bg);
+        visuals.extreme_bg_color = self.surface(palette.row);
+        visuals.faint_bg_color = self.surface(palette.row_alt);
+        visuals.widgets.inactive.bg_fill = self.surface(palette.row);
+        visuals.widgets.hovered.bg_fill = self.surface(palette.row_alt);
+        visuals.widgets.active.bg_fill = self.surface(palette.row_alt);
+        visuals.widgets.open.bg_fill = self.surface(palette.row_alt);
         visuals.selection.bg_fill =
             Color32::from_rgba_unmultiplied(palette.fg.r(), palette.fg.g(), palette.fg.b(), 40);
-        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, palette.fg);
+        let fg = Stroke::new(1.0_f32, palette.fg);
+        let dim = Stroke::new(1.0_f32, palette.dim);
+        visuals.widgets.noninteractive.fg_stroke = dim;
+        visuals.widgets.inactive.fg_stroke = dim;
+        visuals.widgets.hovered.fg_stroke = fg;
+        visuals.widgets.active.fg_stroke = fg;
+        visuals.widgets.open.fg_stroke = fg;
+        visuals.window_stroke = Stroke::new(1.0_f32, palette.dim);
         visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
         ctx.set_visuals(visuals);
         ctx.style_mut(|style| {
@@ -791,15 +830,29 @@ impl GuiApp {
 impl eframe::App for GuiApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         let _ = jobs::save_jobs(&self.persisted_jobs());
+        // Windowed value only; fullscreen never mutates `glass_tint`.
+        let _ = update::set_glass_tint(self.glass_tint);
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        crate::glass::clear_color()
+    }
+
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.drain_events();
         self.expire_toasts();
         self.persist_jobs(false);
-        if self.applied_theme != self.theme {
+        if !self.glass_applied {
+            crate::glass::apply(frame);
+            self.glass_applied = true;
+        }
+        self.viewport_fullscreen = viewport_is_fullscreen(ctx);
+        let paint_tint = update::effective_glass_tint(self.glass_tint, self.viewport_fullscreen);
+        if self.applied_theme != self.theme || self.applied_glass_tint != paint_tint {
             self.apply_theme(ctx);
             self.applied_theme = self.theme;
+            self.applied_glass_tint = paint_tint;
         }
         let palette = theme(self.theme);
         ctx.request_repaint_after(Duration::from_millis(200));
@@ -812,7 +865,11 @@ impl eframe::App for GuiApp {
         egui::TopBottomPanel::top("header")
             .exact_height(header_h)
             .resizable(false)
-            .frame(egui::Frame::NONE.fill(palette.bg).inner_margin(16.0))
+            .frame(
+                egui::Frame::NONE
+                    .fill(self.surface(palette.bg))
+                    .inner_margin(16.0),
+            )
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 let width = ui.available_width();
@@ -832,49 +889,28 @@ impl eframe::App for GuiApp {
                                 ui.label(mono(VERSION_TAG, 10.0, palette.dim));
                             },
                         );
+                        let right_w = 200.0_f32;
                         let right = egui::Rect::from_min_size(
-                            egui::pos2(controls.right() - 310.0, controls.top()),
-                            egui::vec2(310.0, CONTROLS_H),
+                            egui::pos2(controls.right() - right_w, controls.top()),
+                            egui::vec2(right_w, CONTROLS_H),
                         );
                         ui.allocate_new_ui(
                             egui::UiBuilder::new()
                                 .max_rect(right)
-                                .layout(egui::Layout::top_down(egui::Align::RIGHT)),
+                                .layout(egui::Layout::right_to_left(egui::Align::Center)),
                             |ui| {
-                                ui.horizontal(|ui| {
-                                    if auto_update_toggle(ui, self.auto_update, palette).clicked() {
-                                        self.auto_update = !self.auto_update;
-                                        let _ = update::set_auto_update(self.auto_update);
-                                        if self.auto_update {
-                                            let _ = self.tx.send(WorkerCmd::Check);
-                                            self.toast_hold(CHECKING_UPDATES);
-                                        }
+                                ui.spacing_mut().item_spacing.x = 10.0;
+                                if settings_cog(ui, palette, self.settings_open).clicked() {
+                                    self.settings_open = !self.settings_open;
+                                }
+                                if auto_update_toggle(ui, self.auto_update, palette).clicked() {
+                                    self.auto_update = !self.auto_update;
+                                    let _ = update::set_auto_update(self.auto_update);
+                                    if self.auto_update {
+                                        let _ = self.tx.send(WorkerCmd::Check);
+                                        self.toast_hold(CHECKING_UPDATES);
                                     }
-                                    ui.add_space(10.0);
-                                    ui.scope(|ui| {
-                                        ui.style_mut().interaction.interact_radius = 0.0;
-                                        for (id, name) in [
-                                            (ThemeId::Phosphor, "phosphor"),
-                                            (ThemeId::Amber, "amber"),
-                                            (ThemeId::Ice, "ice"),
-                                        ] {
-                                            if theme_swatch(
-                                                ui,
-                                                theme(id).fg,
-                                                self.theme == id,
-                                                name,
-                                            )
-                                            .clicked()
-                                                && self.theme != id
-                                            {
-                                                self.theme = id;
-                                                let _ = update::set_theme(id.as_str());
-                                            }
-                                        }
-                                    });
-                                    ui.add_space(6.0);
-                                    ui.label(mono("theme", 12.0, palette.dim));
-                                });
+                                }
                             },
                         );
                     },
@@ -959,10 +995,8 @@ impl eframe::App for GuiApp {
                         ui.spacing_mut().item_spacing.x = 8.0;
                         let folder = dest_glyph(ui, palette, true);
                         let shown = truncate_middle(&self.dest.display().to_string(), 72);
-                        let path = click_cursor(ui.add(
-                            egui::Label::new(mono(shown, 12.0, palette.dim)).sense(Sense::click()),
-                        ))
-                        .on_hover_text(self.dest.display().to_string());
+                        let path = click_text(ui, mono(shown, 12.0, palette.dim))
+                            .on_hover_text(self.dest.display().to_string());
                         if folder.clicked() || path.clicked() {
                             if let Some(picked) = Self::pick_folder(&self.dest) {
                                 self.apply_picked_dir(picked, false);
@@ -973,7 +1007,11 @@ impl eframe::App for GuiApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(palette.bg).inner_margin(12.0))
+            .frame(
+                egui::Frame::NONE
+                    .fill(self.surface(palette.bg))
+                    .inner_margin(12.0),
+            )
             .show(ctx, |ui| {
                 if let Some(tag) = self.installed_tag.clone() {
                     let fill = Color32::from_rgba_unmultiplied(
@@ -1139,6 +1177,8 @@ impl eframe::App for GuiApp {
                 let mut reveal = None;
                 let mut copy_source = None;
                 let mut persist_now = false;
+                let row_fill = self.surface(palette.row);
+                let row_alt_fill = self.surface(palette.row_alt);
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (stripe, index) in visible.into_iter().enumerate() {
                         if stripe > 0 {
@@ -1166,9 +1206,9 @@ impl eframe::App for GuiApp {
                             .error()
                             .unwrap_or_else(|| job.snapshot.status());
                         let fill = if stripe % 2 == 0 {
-                            palette.row
+                            row_fill
                         } else {
-                            palette.row_alt
+                            row_alt_fill
                         };
                         let settled = job.snapshot.is_done()
                             || (total > 0
@@ -1176,10 +1216,12 @@ impl eframe::App for GuiApp {
                                 && job.snapshot.error().is_none()
                                 && !job.snapshot.is_stopped());
                         let accent = row_accent(palette, settled);
-                        egui::Frame::NONE
+                        let card = egui::Frame::NONE
                             .fill(fill)
-                            .inner_margin(10.0)
-                            .show(ui, |ui| {
+                            .corner_radius(8)
+                            .stroke(Stroke::new(1.0_f32, palette.dim))
+                            .inner_margin(10.0);
+                        card.show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     ui.label(mono(job.kind.label(), 13.0, palette.dim));
                                     if job.kind == Mode::Magnet {
@@ -1193,14 +1235,9 @@ impl eframe::App for GuiApp {
                                     } else {
                                         truncate(&title, 64)
                                     };
-                                    if click_cursor(
-                                        ui.add(
-                                            egui::Label::new(mono(shown, 13.0, accent))
-                                                .sense(Sense::click()),
-                                        ),
-                                    )
-                                    .on_hover_text(&job.source)
-                                    .clicked()
+                                    if click_text(ui, mono(shown, 13.0, accent))
+                                        .on_hover_text(&job.source)
+                                        .clicked()
                                     {
                                         reveal = Some(index);
                                     }
@@ -1343,12 +1380,98 @@ impl eframe::App for GuiApp {
                 }
             });
 
+        self.show_settings(ctx, palette);
         self.show_restart_popup(ctx, palette);
         self.show_toasts(ctx, palette);
     }
 }
 
 impl GuiApp {
+    fn show_settings(&mut self, ctx: &egui::Context, palette: Theme) {
+        if !self.settings_open {
+            return;
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        let mut persist_tint = false;
+        let mut close = false;
+        egui::Window::new("settings")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::RIGHT_TOP, [-16.0, 52.0])
+            .frame(
+                egui::Frame::NONE
+                    .fill(self.card_fill(palette.row))
+                    .stroke(Stroke::new(1.0_f32, palette.dim))
+                    .inner_margin(12.0)
+                    .corner_radius(8),
+            )
+            .show(ctx, |ui| {
+                ui.set_width(204.0);
+                if settings_close(ui, palette).clicked() {
+                    close = true;
+                }
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.label(mono("theme", 12.0, palette.dim));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.scope(|ui| {
+                            ui.style_mut().interaction.interact_radius = 0.0;
+                            for (id, name) in [
+                                (ThemeId::Ice, "ice"),
+                                (ThemeId::Amber, "amber"),
+                                (ThemeId::Phosphor, "phosphor"),
+                            ] {
+                                if theme_swatch(ui, theme(id).fg, self.theme == id, name).clicked()
+                                    && self.theme != id
+                                {
+                                    self.theme = id;
+                                    let _ = update::set_theme(id.as_str());
+                                }
+                            }
+                        });
+                    });
+                });
+                ui.add_space(10.0);
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                {
+                    let locked = self.viewport_fullscreen;
+                    let shown = update::effective_glass_tint(self.glass_tint, locked);
+                    ui.horizontal(|ui| {
+                        ui.label(mono("tint", 12.0, palette.dim));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(mono(
+                                format!("{}%", update::glass_tint_percent(shown)),
+                                12.0,
+                                palette.fg,
+                            ));
+                        });
+                    });
+                    ui.add_space(4.0);
+                    if locked {
+                        let mut locked_tint = shown;
+                        tint_slider(ui, &mut locked_tint, palette, true);
+                    } else {
+                        let response = tint_slider(ui, &mut self.glass_tint, palette, false);
+                        if response.drag_stopped() || (response.changed() && !response.dragged()) {
+                            persist_tint = true;
+                        }
+                    }
+                }
+            });
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        if persist_tint || close {
+            let _ = update::set_glass_tint(self.glass_tint);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        if close {
+            let _ = update::set_glass_tint(self.glass_tint);
+        }
+        if close {
+            self.settings_open = false;
+        }
+    }
+
     fn show_restart_popup(&mut self, ctx: &egui::Context, palette: Theme) {
         let Some(draft) = self.restart.as_ref() else {
             return;
@@ -1368,6 +1491,13 @@ impl GuiApp {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .open(&mut open)
+            .frame(
+                egui::Frame::NONE
+                    .fill(self.card_fill(palette.row))
+                    .stroke(Stroke::new(1.0_f32, palette.dim))
+                    .inner_margin(12.0)
+                    .corner_radius(8),
+            )
             .show(ctx, |ui| {
                 ui.set_min_width(420.0);
                 if kind == Mode::Magnet {
@@ -1383,10 +1513,8 @@ impl GuiApp {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     let folder = dest_glyph(ui, palette, true);
                     let shown = truncate_middle(&dest.display().to_string(), 48);
-                    let path = click_cursor(ui.add(
-                        egui::Label::new(mono(shown, 12.0, palette.dim)).sense(Sense::click()),
-                    ))
-                    .on_hover_text(dest.display().to_string());
+                    let path = click_text(ui, mono(shown, 12.0, palette.dim))
+                        .on_hover_text(dest.display().to_string());
                     if folder.clicked() || path.clicked() {
                         picked = Self::pick_folder(&dest);
                     }
@@ -1578,6 +1706,81 @@ fn paint_leech(painter: &egui::Painter, rect: egui::Rect, color: Color32) {
     );
 }
 
+fn viewport_is_fullscreen(ctx: &egui::Context) -> bool {
+    ctx.input(|input| input.viewport().fullscreen == Some(true))
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn tint_slider(ui: &mut egui::Ui, value: &mut u8, palette: Theme, locked: bool) -> egui::Response {
+    let min = update::GLASS_TINT_MIN;
+    let max = update::GLASS_TINT_MAX;
+    let knob_r = 5.0_f32;
+    let width = ui.available_width().max(1.0);
+    let sense = if locked {
+        Sense::hover()
+    } else {
+        Sense::click_and_drag()
+    };
+    let (rect, mut response) = ui.allocate_exact_size(egui::vec2(width, 22.0), sense);
+    let track = rect.shrink2(egui::vec2(knob_r, 0.0));
+    let span = track.width().max(1.0);
+    if !locked && (response.clicked() || response.dragged()) {
+        if let Some(pointer) = response.interact_pointer_pos() {
+            let t = ((pointer.x - track.left()) / span).clamp(0.0, 1.0);
+            let next = if t <= 0.0 {
+                min
+            } else if t >= 1.0 {
+                max
+            } else {
+                min + (t * f32::from(max - min)).round() as u8
+            };
+            if next != *value {
+                *value = next;
+                response.mark_changed();
+            }
+        }
+    }
+    let t = f32::from(*value - min) / f32::from(max - min);
+    let y = track.center().y;
+    let knob = egui::pos2(track.left() + t * span, y);
+    let painter = ui.painter();
+    painter.line_segment(
+        [egui::pos2(track.left(), y), knob],
+        Stroke::new(2.0_f32, palette.fg),
+    );
+    painter.line_segment(
+        [knob, egui::pos2(track.right(), y)],
+        Stroke::new(1.0_f32, palette.dim),
+    );
+    painter.circle_filled(knob, knob_r, if locked { palette.dim } else { palette.fg });
+    if locked {
+        response.on_hover_text("tint is locked at 100% in fullscreen")
+    } else {
+        click_cursor(response).on_hover_text("how heavy the theme wash sits on the blur")
+    }
+}
+
+fn settings_cog(ui: &mut egui::Ui, palette: Theme, open: bool) -> egui::Response {
+    let size = egui::vec2(28.0, 28.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let color = if open || response.hovered() {
+        palette.fg
+    } else {
+        palette.dim
+    };
+    let painter = ui.painter();
+    let stroke = Stroke::new(1.3_f32, color);
+    let c = rect.center();
+    painter.circle_stroke(c, 4.8, stroke);
+    painter.circle_filled(c, 1.6, color);
+    for step in 0..6 {
+        let rad = (step as f32 * 60.0).to_radians();
+        let dir = egui::vec2(rad.cos(), rad.sin());
+        painter.line_segment([c + dir * 6.2, c + dir * 8.4], stroke);
+    }
+    click_cursor(response).on_hover_text("settings")
+}
+
 fn theme_swatch(ui: &mut egui::Ui, fill: Color32, selected: bool, name: &str) -> egui::Response {
     let size = egui::vec2(16.0, 16.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -1754,6 +1957,74 @@ fn paint_copy(painter: &egui::Painter, rect: egui::Rect, color: Color32, page: C
 
 fn click_cursor(response: egui::Response) -> egui::Response {
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+fn click_text(ui: &mut egui::Ui, text: RichText) -> egui::Response {
+    click_cursor(
+        ui.add(
+            egui::Label::new(text)
+                .sense(Sense::click())
+                .selectable(false),
+        ),
+    )
+}
+
+fn settings_close(ui: &mut egui::Ui, palette: Theme) -> egui::Response {
+    let height = 22.0_f32;
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), Sense::hover());
+    let title = ui.painter().layout_no_wrap(
+        "settings".into(),
+        FontId::new(14.0, FontFamily::Monospace),
+        palette.fg,
+    );
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - title.size().x / 2.0,
+            rect.center().y - title.size().y / 2.0,
+        ),
+        title,
+        palette.fg,
+    );
+    let close_size = egui::vec2(18.0, 18.0);
+    let close_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - close_size.x / 2.0, rect.center().y),
+        close_size,
+    );
+    let close =
+        ui.allocate_new_ui(
+            egui::UiBuilder::new().max_rect(close_rect).layout(
+                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+            ),
+            |ui| {
+                let (icon, response) = ui.allocate_exact_size(close_size, Sense::click());
+                let stroke = Stroke::new(
+                    1.3_f32,
+                    if response.hovered() {
+                        palette.fg
+                    } else {
+                        palette.dim
+                    },
+                );
+                let pad = 4.5_f32;
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(icon.left() + pad, icon.top() + pad),
+                        egui::pos2(icon.right() - pad, icon.bottom() - pad),
+                    ],
+                    stroke,
+                );
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(icon.right() - pad, icon.top() + pad),
+                        egui::pos2(icon.left() + pad, icon.bottom() - pad),
+                    ],
+                    stroke,
+                );
+                click_cursor(response).on_hover_text("close")
+            },
+        );
+    close.inner
 }
 
 fn note_after_up_to_date(current: &str) -> Option<&'static str> {
@@ -2014,12 +2285,14 @@ mod tests {
         let c = theme(ThemeId::Ice).fg;
         assert_ne!(a, b);
         assert_ne!(b, c);
+        assert_ne!(a, c);
     }
 
     #[test]
     fn theme_id_maps_config_names() {
         assert_eq!(ThemeId::from_config("amber").as_str(), "amber");
         assert_eq!(ThemeId::from_config("ICE").as_str(), "ice");
+        assert_eq!(ThemeId::from_config("scarlet").as_str(), "phosphor");
         assert_eq!(ThemeId::from_config("").as_str(), "phosphor");
         assert_eq!(ThemeId::from_config("unknown").as_str(), "phosphor");
     }

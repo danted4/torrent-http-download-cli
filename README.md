@@ -227,7 +227,7 @@ HTTP resume keeps `{sha256(url)[0..16]}.part-N` plus a small JSON manifest under
 - GUI concurrent jobs: 4
 - Progress format: `BAR_TEMPLATE` in `src/progress.rs`
 - HTTP and updater timeouts: 20s connect, 60s between reads
-- Auto-update, magnet seed, GUI `theme`, and optional `download_dir`: `~/.config/torrenter/config.json` (macOS: `~/Library/Application Support/torrenter/config.json`, Windows: `%APPDATA%\torrenter\config.json`). `seed` defaults to on. `theme` is `phosphor`, `amber`, or `ice` (default phosphor). Missing `download_dir` keeps following the live OS Downloads path.
+- Auto-update, magnet seed, GUI `theme`, GUI `glass_tint`, and optional `download_dir`: `~/.config/torrenter/config.json` (macOS: `~/Library/Application Support/torrenter/config.json`, Windows: `%APPDATA%\torrenter\config.json`). `seed` defaults to on. `theme` is `phosphor`, `amber`, or `ice` (default phosphor). `glass_tint` is 40–210 (default 60% of that range) and tints the frosted window on macOS/Windows; native fullscreen locks the wash at 100% without writing that override. Missing `download_dir` keeps following the live OS Downloads path. Auto-update stays on the GUI header; theme and tint sit in the cog.
 - GUI job list: `jobs.json` in that same folder. Each row keeps its own dest and share/leech. Corrupt files are moved to `jobs.json.bak`.
 
 ## Development

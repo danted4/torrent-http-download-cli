@@ -3,6 +3,7 @@ package com.danted4.torrenter
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -29,7 +30,11 @@ class DownloadService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        return START_STICKY
+        val app = application as TorrenterApp
+        if (app.engine == null) {
+            stopSelf()
+        }
+        return START_NOT_STICKY
     }
 
     private fun buildNotification(): Notification {
@@ -52,5 +57,19 @@ class DownloadService : Service() {
     companion object {
         const val CHANNEL_ID = "torrenter-jobs"
         const val NOTIFICATION_ID = 7
+
+        fun startFromUi(context: Context) {
+            context.startForegroundService(Intent(context, DownloadService::class.java))
+        }
+
+        fun syncFromOwner(
+            context: Context,
+            active: Boolean,
+        ) {
+            if (active) {
+                return
+            }
+            context.stopService(Intent(context, DownloadService::class.java))
+        }
     }
 }

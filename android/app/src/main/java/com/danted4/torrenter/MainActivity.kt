@@ -117,10 +117,11 @@ private fun AppScreen(
 
     fun refresh() {
         val live = engine ?: return
-        live.drainNotices().lastOrNull()?.let { notice = it }
-        live.persist()
+        app.takeNotices().lastOrNull()?.let { notice = it }
         jobs = live.jobs()
-        syncService(activity, live.anyActive())
+        if (live.anyActive()) {
+            DownloadService.startFromUi(activity)
+        }
     }
 
     fun setShare(value: Boolean) {
@@ -395,14 +396,3 @@ private fun requestBatteryExemption(activity: ComponentActivity) {
     runCatching { activity.startActivity(intent) }
 }
 
-private fun syncService(
-    activity: ComponentActivity,
-    active: Boolean,
-) {
-    val intent = Intent(activity, DownloadService::class.java)
-    if (active) {
-        activity.startForegroundService(intent)
-    } else {
-        activity.stopService(intent)
-    }
-}

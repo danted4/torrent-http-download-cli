@@ -264,6 +264,7 @@ pub async fn start_download_with(
     let _folder = folder_lock.lock().await;
     if !progress.is_paused() {
         progress.set_status("verifying");
+        progress.set_message("Initializing torrent client & verifying data...");
     }
 
     // Compilation torrents open many files at once; macOS defaults are often 256.

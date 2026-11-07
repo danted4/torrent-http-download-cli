@@ -148,7 +148,7 @@ Sideload only — not on Google Play. minSdk **30**, ABIs `arm64-v8a` + `x86_64`
 4. Allow **notifications** so the foreground service can keep jobs alive when you leave the app.
 5. If Android asks to ignore battery optimizations, allow it. Denying that does not block jobs; OEMs may still freeze seeding.
 
-Reopen the app to restore incomplete jobs (`jobs.json` in app private storage). A reboot does **not** autostart torrenter. Share mode asks the LAN gateway to forward the listen port (UPnP); phones behind CGNAT can still finish at `U 0.00` with no inbound peers. Theme and seed live in app preferences, not desktop `config.json`.
+Leaving the app (Back) keeps live jobs in a foreground service until they finish or you Stop. Reopen the app to restore incomplete jobs (`jobs.json` in app private storage). A reboot or process kill does **not** autostart torrenter. Share mode asks the LAN gateway to forward the listen port (UPnP); phones behind CGNAT can still finish at `U 0.00` with no inbound peers. Theme and seed live in app preferences, not desktop `config.json`.
 
 No Rust/Cargo is needed on the phone. Building the APK is in the [Development](#development) section.
 

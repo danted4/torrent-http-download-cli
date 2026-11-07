@@ -850,7 +850,7 @@ fun uniffi_torrenter_fn_method_engine_hydrate(`ptr`: Pointer,uniffi_out_err: Uni
 ): Unit
 fun uniffi_torrenter_fn_method_engine_jobs(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_torrenter_fn_method_engine_persist(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_torrenter_fn_method_engine_persist(`ptr`: Pointer,`force`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_torrenter_fn_method_engine_queue(`ptr`: Pointer,`kind`: RustBuffer.ByValue,`source`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
@@ -1007,7 +1007,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_torrenter_checksum_method_engine_jobs() != 38627.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_torrenter_checksum_method_engine_persist() != 54403.toShort()) {
+    if (lib.uniffi_torrenter_checksum_method_engine_persist() != 39229.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_torrenter_checksum_method_engine_queue() != 33011.toShort()) {
@@ -1414,7 +1414,7 @@ public interface EngineInterface {
     
     fun `jobs`(): List<JobView>
     
-    fun `persist`()
+    fun `persist`(`force`: kotlin.Boolean)
     
     fun `queue`(`kind`: Kind, `source`: kotlin.String): kotlin.ULong
     
@@ -1575,12 +1575,12 @@ open class Engine: Disposable, AutoCloseable, EngineInterface
     }
     
 
-    override fun `persist`()
+    override fun `persist`(`force`: kotlin.Boolean)
         = 
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_torrenter_fn_method_engine_persist(
-        it, _status)
+        it, FfiConverterBoolean.lower(`force`),_status)
 }
     }
     

@@ -123,8 +123,8 @@ impl Engine {
         }
     }
 
-    pub fn persist(&self) {
-        self.session.persist(true);
+    pub fn persist(&self, force: bool) {
+        self.session.persist(force);
     }
 
     pub fn drain_notices(&self) -> Vec<String> {
@@ -237,5 +237,8 @@ mod tests {
         );
         assert!(engine.queue(Kind::Http, "  ".into()).is_err());
         assert!(engine.jobs().is_empty());
+        engine.persist(false);
+        engine.persist(true);
+        assert!(!engine.any_active());
     }
 }

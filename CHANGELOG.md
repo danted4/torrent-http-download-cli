@@ -17,6 +17,8 @@ All notable changes to this project are documented here.
 - Magnet jobs copy librqbit upload totals/rates on every poll (including session counters), so Android share rows are not stuck at `U 0.00 B`.
 - Share mode asks the LAN gateway to forward the listen port (UPnP) so peers can connect in; phones behind NAT otherwise finish at `U 0.00` with no inbound peers.
 - Re-adding a magnet shows **verifying** (and the hash pass) until librqbit is live, then **downloading** from the real resume point.
+- Android session tick (drain, throttled persist, FGS stop) lives on the `Application`, not the Compose loop. The notification service is `START_NOT_STICKY` and does not hydrate after a kill.
+- CLI magnet progress again shows the initializing/verifying message on the bar.
 
 ## [3.5.4] - 2026-11-06
 

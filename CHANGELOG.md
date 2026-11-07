@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Android native/JNI build helper is `cargo run --features android-ndk --bin android-ndk` instead of `android/build-native.sh`.
+
 ## [3.6.0] - 2026-11-07
 
 ### Added

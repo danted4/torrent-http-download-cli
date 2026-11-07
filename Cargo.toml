@@ -24,6 +24,7 @@ gui = [
     "dep:objc2-quartz-core",
 ]
 macos-app = []
+android-ndk = []
 ffi = ["dep:uniffi"]
 ffi-bindgen = ["ffi", "uniffi/cli"]
 
@@ -102,6 +103,11 @@ required-features = ["gui"]
 name = "macos-app"
 path = "src/bin/macos-app.rs"
 required-features = ["macos-app"]
+
+[[bin]]
+name = "android-ndk"
+path = "src/bin/android-ndk.rs"
+required-features = ["android-ndk"]
 
 [[bin]]
 name = "uniffi-bindgen"

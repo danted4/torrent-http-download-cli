@@ -137,7 +137,7 @@ Sideload only — not on Google Play. minSdk **30**, ABIs `arm64-v8a` + `x86_64`
 1. Open the [latest GitHub Release](https://github.com/danted4/torrenter/releases/latest) and download `torrenter-android.apk` (debug-signed sideload, arm64 + x86_64). Or build it from this tree (see [Development](#development)):
 
    ```bash
-   ./android/build-native.sh
+   cargo run --features android-ndk --bin android-ndk
    cd android && gradle assembleDebug
    ```
 
@@ -266,7 +266,7 @@ cargo build --release --features gui --bin torrenter-gui
 ./target/release/torrenter-gui          # Windows: .\target\release\torrenter-gui.exe
 
 # Android (needs rustup Android targets, NDK, cargo-ndk, Android SDK, JDK 17)
-./android/build-native.sh
+cargo run --features android-ndk --bin android-ndk
 # AGP 8.7 needs JDK 17 (Java 21+ / 27 fails). Then:
 cd android && gradle assembleDebug
 ```

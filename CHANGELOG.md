@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-11-07
+
 ### Added
 
 - Shared download session (`src/session.rs`): queue cap 4, duplicate magnet/URL, persist/restore. Desktop GUI uses it.

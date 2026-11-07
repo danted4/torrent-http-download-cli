@@ -22,8 +22,10 @@ struct ContentView: View {
             modeSwitch(colors)
             urlField(colors)
             Button("START") {
-                owner.queue(kind: magnet ? .magnet : .http, source: input.trimmingCharacters(in: .whitespacesAndNewlines))
-                input = ""
+                let source = input.trimmingCharacters(in: .whitespacesAndNewlines)
+                if owner.queue(kind: magnet ? .magnet : .http, source: source) {
+                    input = ""
+                }
             }
             .buttonStyle(MonoButton(palette: colors))
             Text("On My iPhone/torrenter")

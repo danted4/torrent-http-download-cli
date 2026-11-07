@@ -36,14 +36,17 @@ final class EngineOwner: ObservableObject {
         startTicker()
     }
 
-    func queue(kind: Kind, source: String) {
-        guard let engine else { return }
+    @discardableResult
+    func queue(kind: Kind, source: String) -> Bool {
+        guard let engine else { return false }
         do {
             _ = try engine.queue(kind: kind, source: source)
             notice = nil
             refresh()
+            return true
         } catch {
             notice = engineMessage(error)
+            return false
         }
     }
 

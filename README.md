@@ -1,4 +1,4 @@
-# torrenter &nbsp;  &nbsp; <a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="28" height="28" align="absmiddle"></a> <a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="28" height="28" align="absmiddle"></a> <a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="28" height="28" align="absmiddle"></a> <a href="#android"><img src="docs/os-android.svg" alt="Android" width="28" height="28" align="absmiddle"></a> &nbsp;  &nbsp;
+# torrenter &nbsp;  &nbsp; <a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="28" height="28" align="absmiddle"></a> <a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="28" height="28" align="absmiddle"></a> <a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="28" height="28" align="absmiddle"></a> <a href="#android"><img src="docs/os-android.svg" alt="Android" width="28" height="28" align="absmiddle"></a> <a href="#ios"><img src="docs/os-ios.svg" alt="iOS" width="28" height="28" align="absmiddle"></a> &nbsp;  &nbsp;
 
 **torrenter gui**
 
@@ -36,7 +36,7 @@ torrenter update                 # install the latest matching CLI asset now
 
 While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop.
 
-Downloader with two engines, two desktop fronts, and an **Android sideload APK**. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary, a **native GUI** binary (egui, no HTML/CSS), and `torrenter-android.apk`. It is not a Play Store listing and has no in-app updater.
+Downloader with two engines, two desktop fronts, an **Android sideload APK**, and an **iOS sideload app** you build on a Mac. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary, a **native GUI** binary (egui, no HTML/CSS), and `torrenter-android.apk`. There is no iOS IPA on Releases, no App Store listing, and no in-app updater.
 
 1. **Magnet / torrent** — BitTorrent via [librqbit](https://github.com/ikatson/rqbit)
 2. **Direct HTTP(S)** — 4-part parallel download with byte-range resume
@@ -167,6 +167,33 @@ Leaving the app (Back) keeps live jobs in a foreground service until they finish
 
 No Rust/Cargo is needed on the phone. Building the APK is in the [Development](#development) section.
 
+## iOS
+
+Sideload from this tree onto **your** iPhone — not the App Store, not a GitHub IPA. min **iOS 16**, arm64 device + simulator slice. Same engines and chrome as Android (magnet icon, phosphor / amber / ice / scarlet / violet, MAGNET ⇄ HTTP, verifying then downloading, queue of four) with three product cuts: **leech only** (no share toggle), **foreground only** (Home **stops** live jobs; reopen hydrates; tap restart), dest is **On My iPhone → torrenter** (`Documents/torrenter`). There is **no** in-app updater.
+
+You need a **Mac**, **full Xcode** from the App Store (Command Line Tools are not enough), Rust 1.85+, and the iPhone on USB. A free Apple ID can sign to that device (the cert expires about every 7 days). Linux and Windows cannot produce an installable iOS app.
+
+1. Install **Xcode**, open it once, accept the license. Then:
+
+   ```bash
+   sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+   sudo xcodebuild -license accept
+   sudo xcodebuild -runFirstLaunch
+   cargo run --features ios-xcframework --bin ios-xcframework
+   open ios/torrenter.xcodeproj
+   ```
+
+2. Unlock the iPhone, tap **Trust This Computer** if asked. In Xcode’s destination bar pick the **real iPhone**, not a Simulator.
+3. If Xcode says **iOS X.Y is not installed** with a **Get** button: click Get and wait (this can be several GB). Play will not work until that finishes. Ignore a yellow **Update to recommended settings** warning.
+4. Left sidebar: click the top blue **torrenter** project → **TARGETS → torrenter** → **Signing & Capabilities**. Check **Automatically manage signing**. **Team:** **Add Account…**, sign in with your Apple ID, then pick **Personal Team**. You do not need a paid developer program.
+5. Click **Play**. The Keychain dialog wants the **Mac login password** (not Apple ID, not the iPhone passcode). Prefer **Always Allow**.
+6. First Run often fails with **Developer Mode disabled**. On the phone: **Settings → Privacy & Security**, scroll to the **bottom** (under Security / Lockdown Mode), tap **Developer Mode**, turn it on, **Restart**. After unlock, tap **Enable** / **Turn On** and enter the **phone passcode**. iOS search for “Developer” often finds nothing — do not look under General. Then Play again.
+7. If the icon is on the home screen but will not open (**Untrusted Developer**): **Settings → General → VPN & Device Management** (sometimes **Device Management**) → the Apple Development / your name entry → **Trust**. Then open torrenter.
+
+Downloads: **Files → Browse → On My iPhone → torrenter**. If On My iPhone is missing, enable it under Browse locations. Idle job rows have **share** for Open In / VLC.
+
+Leaving the app **stops** live jobs (no Android-style background service). Reopen and tap **restart**. `jobs.json` is in Application Support (not in Files). Theme is UserDefaults. Incomplete work resumes from dest / `.resume/`. Local network permission may appear for magnet/DHT.
+
 ## Two download modes
 
 | | **Magnet / torrent** | **Direct HTTP(S)** |
@@ -267,6 +294,7 @@ HTTP resume keeps `{sha256(url)[0..16]}.part-N` plus a small JSON manifest under
 - Auto-update, magnet seed, GUI `theme`, GUI `glass_tint`, and optional `download_dir`: `~/.config/torrenter/config.json` (macOS: `~/Library/Application Support/torrenter/config.json`, Windows: `%APPDATA%\torrenter\config.json`). `seed` defaults to on. `theme` is `phosphor`, `amber`, `ice`, `scarlet`, or `violet` (default phosphor). `glass_tint` is 40–210 (default 60% of that range) and tints the frosted window on macOS/Windows; native fullscreen locks the wash at 100% without writing that override. Labels and the settings cog keep a light brush-stroke wash behind the glyphs so 0% tint stays readable on a light wallpaper. Windows 11 uses light Mica (acrylic only on Windows 10); DWM fills an inactive window with a solid theme color. Missing `download_dir` keeps following the live OS Downloads path. Auto-update stays on the GUI header; theme and tint sit in the cog.
 - GUI job list: `jobs.json` in that same folder. Each row keeps its own dest and share/leech. Corrupt files are moved to `jobs.json.bak`.
 - Android: dest is always public `Download/torrenter`. Job list is `jobs.json` under the app files dir. Theme and seed are SharedPreferences (`theme`, `seed`). No `config.json`, no glass tint, no updater.
+- iOS: dest is always `Documents/torrenter` (Files: On My iPhone / torrenter). Job list is `jobs.json` under Application Support. Theme is UserDefaults (`theme`). Leech only, no seed preference, no `config.json`, no glass tint, no updater.
 
 ## Development
 
@@ -284,6 +312,10 @@ cargo build --release --features gui --bin torrenter-gui
 cargo run --features android-ndk --bin android-ndk
 # AGP 8.7 needs JDK 17 (Java 21+ / 27 fails). Then:
 cd android && gradle assembleDebug
+
+# iOS (macOS + full Xcode, rustup iOS targets)
+cargo run --features ios-xcframework --bin ios-xcframework
+open ios/torrenter.xcodeproj
 ```
 
 ```bash
@@ -324,6 +356,15 @@ Release: `git tag vX.Y.Z && git push origin vX.Y.Z` (commit must already be on `
 | Android: cannot write downloads | Grant **All files access**; dest is `Download/torrenter` |
 | Android: jobs die in the background | Allow notifications and ignore battery optimizations; a reboot does not autostart the app |
 | Android: share magnet, `U 0.00` | Keep the app open; allow UPnP on the LAN; CGNAT still blocks inbound peers |
+| iOS: helper fails, no iphoneos SDK | Install **full Xcode** (not CLT), then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` (see [iOS](#ios)) |
+| iOS: Xcode license / first launch | `sudo xcodebuild -license accept` then `sudo xcodebuild -runFirstLaunch` |
+| iOS: destination says iOS X.Y is not installed | Click **Get** in Xcode and wait for the platform download |
+| iOS: Keychain password rejected | Use the **Mac login** password, not Apple ID / iPhone passcode; **Always Allow** |
+| iOS: Developer Mode missing in search | **Settings → Privacy & Security**, scroll to the **bottom**; not under General |
+| iOS: app icon will not open | **Settings → General → VPN & Device Management** → Trust the developer (see [iOS](#ios)) |
+| iOS: cannot install from GitHub | There is no IPA on Releases; build on a Mac (see [iOS](#ios)) |
+| iOS: jobs stop when you leave | Expected — v1 is foreground-only; reopen and tap **restart** |
+| iOS: VLC cannot see files | Open Files → On My iPhone → torrenter, or **share** on the idle row |
 
 ## Responsible use
 

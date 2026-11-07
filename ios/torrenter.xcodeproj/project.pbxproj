@@ -1,0 +1,316 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		167B512FE0F04AF68B844D33 /* torrenterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC38FBB898334D908ADA6130 /* torrenterApp.swift */; };
+		1D73A7B1B00E40AA8645DD51 /* EngineOwner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76B19D840C774EB7AED8D4DF /* EngineOwner.swift */; };
+		3AA7FDDE40B243D6BF7B6F24 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 311003AAAF07472FB42BBED0 /* SystemConfiguration.framework */; };
+		3C518F465432402E820F6FD0 /* torrenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2335FFB73EA4AD58582493C /* torrenter.swift */; };
+		63DA998EE0B1418BB8BC4CD1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F783D3E13C949ECAA9EAD5B /* ContentView.swift */; };
+		6754B42AC8E14BEAAA86E8DA /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC005C7743246B5B8DC8613 /* Format.swift */; };
+		7CD553FCE27C4F4CB538E85A /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94E2B3BCF83142E9ABF1A7FA /* ShareSheet.swift */; };
+		8EC69E4BDDFF412C8D9FC185 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 04E141E951114AC3869AD5ED /* Security.framework */; };
+		A119A4F5CC0440A9A0A9998C /* TorrenterFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F641A277B6946089CB54536 /* TorrenterFFI.xcframework */; };
+		AC00080131B649D8BF781C8C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F7FB19AD9A2240DE9A97EC7C /* PrivacyInfo.xcprivacy */; };
+		BE12C43783DA4C7DA286C99A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9E28A699024C3F953BDBBF /* Theme.swift */; };
+		BF50B220D1B54BBF9B18E5E2 /* Paths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9E729B663043049E053191 /* Paths.swift */; };
+		FD4C4FA28578464EA3B4A0E9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F621EE8589D54D41821785D2 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		04E141E951114AC3869AD5ED /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		0E9E28A699024C3F953BDBBF /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		2F783D3E13C949ECAA9EAD5B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		311003AAAF07472FB42BBED0 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
+		4F641A277B6946089CB54536 /* TorrenterFFI.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = TorrenterFFI.xcframework; sourceTree = "<group>"; };
+		5D9E729B663043049E053191 /* Paths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Paths.swift; sourceTree = "<group>"; };
+		6C2BD598FA5746B792556DDA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		6DC005C7743246B5B8DC8613 /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
+		76B19D840C774EB7AED8D4DF /* EngineOwner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineOwner.swift; sourceTree = "<group>"; };
+		94E2B3BCF83142E9ABF1A7FA /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
+		97B7173CB6BA406F8106B0DE /* torrenter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = torrenter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2335FFB73EA4AD58582493C /* torrenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = torrenter.swift; path = ../generated/torrenter.swift; sourceTree = "<group>"; };
+		F621EE8589D54D41821785D2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F7FB19AD9A2240DE9A97EC7C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		FC38FBB898334D908ADA6130 /* torrenterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = torrenterApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		022714AED7C647A3A47F4ADF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A119A4F5CC0440A9A0A9998C /* TorrenterFFI.xcframework in Frameworks */,
+				8EC69E4BDDFF412C8D9FC185 /* Security.framework in Frameworks */,
+				3AA7FDDE40B243D6BF7B6F24 /* SystemConfiguration.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1DA4E36A2446479D99D96403 = {
+			isa = PBXGroup;
+			children = (
+				5F25A0F47711467080D4B956 /* torrenter */,
+				4F641A277B6946089CB54536 /* TorrenterFFI.xcframework */,
+				8525D250F1994AA28985DD02 /* Frameworks */,
+				2F7347DC56D24BA9A3A99DAC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		2F7347DC56D24BA9A3A99DAC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				97B7173CB6BA406F8106B0DE /* torrenter.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5F25A0F47711467080D4B956 /* torrenter */ = {
+			isa = PBXGroup;
+			children = (
+				FC38FBB898334D908ADA6130 /* torrenterApp.swift */,
+				2F783D3E13C949ECAA9EAD5B /* ContentView.swift */,
+				76B19D840C774EB7AED8D4DF /* EngineOwner.swift */,
+				0E9E28A699024C3F953BDBBF /* Theme.swift */,
+				6DC005C7743246B5B8DC8613 /* Format.swift */,
+				5D9E729B663043049E053191 /* Paths.swift */,
+				94E2B3BCF83142E9ABF1A7FA /* ShareSheet.swift */,
+				E2335FFB73EA4AD58582493C /* torrenter.swift */,
+				F621EE8589D54D41821785D2 /* Assets.xcassets */,
+				6C2BD598FA5746B792556DDA /* Info.plist */,
+				F7FB19AD9A2240DE9A97EC7C /* PrivacyInfo.xcprivacy */,
+			);
+			path = torrenter;
+			sourceTree = "<group>";
+		};
+		8525D250F1994AA28985DD02 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				04E141E951114AC3869AD5ED /* Security.framework */,
+				311003AAAF07472FB42BBED0 /* SystemConfiguration.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1E1545725872464393EFCDEE /* torrenter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C52119B72EB245ACA8F992BF /* Build configuration list for PBXNativeTarget "torrenter" */;
+			buildPhases = (
+				7E5529F6F1A14D7B8F3005C7 /* Sources */,
+				022714AED7C647A3A47F4ADF /* Frameworks */,
+				E56C718701DC438491D839E7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = torrenter;
+			productName = torrenter;
+			productReference = 97B7173CB6BA406F8106B0DE /* torrenter.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DE9D6F4C11F4410D8B9A4496 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					1E1545725872464393EFCDEE = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = E32F1FE0C4AB4A1A9F632782 /* Build configuration list for PBXProject "torrenter" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1DA4E36A2446479D99D96403;
+			productRefGroup = 2F7347DC56D24BA9A3A99DAC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1E1545725872464393EFCDEE /* torrenter */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E56C718701DC438491D839E7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FD4C4FA28578464EA3B4A0E9 /* Assets.xcassets in Resources */,
+				AC00080131B649D8BF781C8C /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7E5529F6F1A14D7B8F3005C7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				167B512FE0F04AF68B844D33 /* torrenterApp.swift in Sources */,
+				63DA998EE0B1418BB8BC4CD1 /* ContentView.swift in Sources */,
+				1D73A7B1B00E40AA8645DD51 /* EngineOwner.swift in Sources */,
+				BE12C43783DA4C7DA286C99A /* Theme.swift in Sources */,
+				6754B42AC8E14BEAAA86E8DA /* Format.swift in Sources */,
+				BF50B220D1B54BBF9B18E5E2 /* Paths.swift in Sources */,
+				7CD553FCE27C4F4CB538E85A /* ShareSheet.swift in Sources */,
+				3C518F465432402E820F6FD0 /* torrenter.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		C75C64989269495EBF087350 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D11111111111111111111111 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_OPTIMIZATION_LEVEL = s;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D22222222222222222222222 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9Q93NG7422;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = torrenter/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = torrenter;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 3.7.0;
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.danted4.torrenter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D33333333333333333333333 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9Q93NG7422;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = torrenter/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = torrenter;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 3.7.0;
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.danted4.torrenter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C52119B72EB245ACA8F992BF /* Build configuration list for PBXNativeTarget "torrenter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D22222222222222222222222 /* Debug */,
+				D33333333333333333333333 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E32F1FE0C4AB4A1A9F632782 /* Build configuration list for PBXProject "torrenter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C75C64989269495EBF087350 /* Debug */,
+				D11111111111111111111111 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DE9D6F4C11F4410D8B9A4496 /* Project object */;
+}

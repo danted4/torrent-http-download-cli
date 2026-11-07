@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-11-07
+
+### Added
+
+- iOS sideload shell (`ios/`): UniFFI Swift + SwiftUI, same engines as Android. Leech-only, foreground-only (Home stops live jobs), dest is `Documents/torrenter` (Files), `jobs.json` in Application Support. Build for your device with Mac + Xcode; no GitHub IPA. README title row includes iOS; install steps cover Xcode license, device support download, signing, Developer Mode, and trust.
+- Host helper `cargo run --features ios-xcframework --bin ios-xcframework` writes Swift bindings and a device+simulator `TorrenterFFI.xcframework`.
+- Patch `librqbit-dualstack-sockets` so iOS bind-to-interface matches macOS (`IP_BOUND_IF`) instead of Linux `SO_BINDTODEVICE`.
+
 ## [3.6.1] - 2026-11-07
 
 ### Added

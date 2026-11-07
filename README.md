@@ -4,9 +4,9 @@
 
 ![torrenter gui](docs/gui-3.5.4.jpg)
 
-**torrenter cli**
+**torrenter cli** &nbsp; **torrenter android**
 
-![torrenter cli](docs/cli.jpg)
+<img src="docs/cli.jpg" alt="torrenter cli" height="240"> <img src="docs/android-3.6.1.jpg" alt="torrenter android" height="240">
 
 No arguments opens the interactive menu (magnet, HTTP, auto-update, seed, download folder). Subcommands:
 

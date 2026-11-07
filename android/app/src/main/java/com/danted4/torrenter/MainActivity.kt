@@ -48,6 +48,7 @@ import kotlinx.coroutines.delay
 import uniffi.torrenter.Engine
 import uniffi.torrenter.JobView
 import uniffi.torrenter.Kind
+import uniffi.torrenter.banner
 
 class MainActivity : ComponentActivity() {
     private val notify =
@@ -175,7 +176,7 @@ private fun AppScreen(
                 modifier = Modifier.size(28.dp),
             )
             Text(
-                "danted4/torrenter",
+                banner(),
                 color = palette.fg,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.titleMedium,

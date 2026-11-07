@@ -2,8 +2,14 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use crate::identity;
 use crate::jobs::JobKind;
 use crate::session::{self, Job, Session};
+
+#[uniffi::export]
+pub fn banner() -> String {
+    identity::banner()
+}
 
 #[derive(Debug, Clone, uniffi::Error)]
 pub enum EngineError {
@@ -240,5 +246,11 @@ mod tests {
         engine.persist(false);
         engine.persist(true);
         assert!(!engine.any_active());
+    }
+
+    #[test]
+    fn banner_matches_identity() {
+        assert_eq!(banner(), identity::banner());
+        assert!(banner().starts_with("danted4/torrenter v"));
     }
 }

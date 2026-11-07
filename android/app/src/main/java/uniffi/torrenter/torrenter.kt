@@ -742,6 +742,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -757,7 +759,9 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 // when the library is loaded.
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
-    fun uniffi_torrenter_checksum_method_engine_any_active(
+    fun uniffi_torrenter_checksum_func_banner(
+): Short
+fun uniffi_torrenter_checksum_method_engine_any_active(
 ): Short
 fun uniffi_torrenter_checksum_method_engine_dest(
 ): Short
@@ -866,6 +870,8 @@ fun uniffi_torrenter_fn_method_engine_stop(`ptr`: Pointer,`id`: Long,uniffi_out_
 ): Unit
 fun uniffi_torrenter_fn_method_engine_toggle_pause(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_torrenter_fn_func_banner(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun ffi_torrenter_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_torrenter_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -992,6 +998,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_torrenter_checksum_func_banner() != 39202.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_torrenter_checksum_method_engine_any_active() != 33237.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1990,5 +1999,14 @@ public object FfiConverterSequenceTypeJobView: FfiConverterRustBuffer<List<JobVi
             FfiConverterTypeJobView.write(it, buf)
         }
     }
+} fun `banner`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_torrenter_fn_func_banner(
+        _status)
 }
+    )
+    }
+    
+
 

@@ -4,9 +4,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [3.6.1] - 2026-11-07
+
+### Added
+
+- README shows the Android UI next to the CLI screenshot.
+
 ### Changed
 
 - Android native/JNI build helper is `cargo run --features android-ndk --bin android-ndk` instead of `android/build-native.sh`.
+
+### Fixed
+
+- Android header shows `danted4/torrenter vX.Y.Z`, same banner as CLI and desktop GUI.
 
 ## [3.6.0] - 2026-11-07
 

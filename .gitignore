@@ -1,5 +1,10 @@
 /target
 .cursor/
+android/.gradle/
+android/**/build/
+android/local.properties
+android/**/jniLibs/
+.idea/
 node_modules
 package-lock.json
 yarn.lock

@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Shared download session (`src/session.rs`): queue cap 4, duplicate magnet/URL, persist/restore. Desktop GUI uses it.
+- Optional `ffi` feature: UniFFI `Engine` for Kotlin (and later Swift). Android sideload app under `android/` (Compose, foreground service, `Download/torrenter`, all-files access).
+- Android UI matches the desktop chrome: magnet launcher icon, theme swatches, MAGNET ⇄ HTTP, share/leech glyphs, and the same size/speed/ETA job line.
+
+### Fixed
+
+- Job download/upload rates are computed in the shared session, so Android (and any FFI client) shows the same D/U speeds as the desktop GUI.
+- Magnet jobs copy librqbit upload totals/rates on every poll (including session counters), so Android share rows are not stuck at `U 0.00 B`.
+- Share mode asks the LAN gateway to forward the listen port (UPnP) so peers can connect in; phones behind NAT otherwise finish at `U 0.00` with no inbound peers.
+- Re-adding a magnet shows **verifying** (and the hash pass) until librqbit is live, then **downloading** from the real resume point.
+
 ## [3.5.4] - 2026-11-06
 
 ### Added

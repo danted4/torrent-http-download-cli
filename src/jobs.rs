@@ -31,6 +31,13 @@ impl JobKind {
             _ => None,
         }
     }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Magnet => "MAGNET",
+            Self::Http => "HTTP",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

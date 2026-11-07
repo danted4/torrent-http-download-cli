@@ -21,7 +21,7 @@ torrenter update                 # install the latest matching CLI asset now
 
 While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop.
 
-Downloader with two engines and two fronts. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary and a **native GUI** binary (egui, no HTML/CSS).
+Downloader with two engines and two desktop fronts, plus an Android sideload APK. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary, a **native GUI** binary (egui, no HTML/CSS), and (when the Android job succeeds) a **debug/release APK**.
 
 1. **Magnet / torrent** — BitTorrent via [librqbit](https://github.com/ikatson/rqbit)
 2. **Direct HTTP(S)** — 4-part parallel download with byte-range resume
@@ -129,6 +129,18 @@ Do not click **Cancel** or **Don’t allow** if you want magnet share mode or in
 If you clicked Don’t Allow, open **System Settings → Network → Firewall** (or **Privacy & Security → Local Network**) and enable torrenter, then relaunch. Gatekeeper can also return after an update — clear quarantine again if macOS refuses to open the new file.
 
 No Rust/Cargo is needed at runtime. Building from source is in the [Development](#development) section.
+
+## Android
+
+Sideload only (not Play). minSdk 30, `arm64-v8a` + `x86_64`. Same magnet glyph, phosphor / amber / ice / scarlet / violet themes, MAGNET ⇄ HTTP swap, and share/leech glyphs as the desktop GUI. There is no in-app updater.
+
+1. Build a debug APK (see [Development](#development)) or download `torrenter-*-android.apk` from a GitHub Release when present.
+2. Allow install from this source, then open the APK.
+3. Grant **All files access** (required). Output is `Download/torrenter`, same layout as desktop.
+4. Allow notifications so the foreground service can keep jobs alive when you leave the app.
+5. Ignore battery optimizations if asked. Denying that does not block jobs; OEMs may still freeze seeding.
+
+Reopen the app to restore incomplete jobs. A reboot does not autostart torrenter.
 
 ## Two download modes
 
@@ -241,6 +253,11 @@ cargo build --release
 cargo build --release --features gui --bin torrenter-gui
 ./target/release/torrenter              # Windows: .\target\release\torrenter.exe
 ./target/release/torrenter-gui          # Windows: .\target\release\torrenter-gui.exe
+
+# Android (needs rustup Android targets, NDK, cargo-ndk, Android SDK, JDK 17)
+./android/build-native.sh
+# AGP 8.7 needs JDK 17 (Java 21+ / 27 fails). Then:
+cd android && gradle assembleDebug
 ```
 
 ```bash

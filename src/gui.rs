@@ -6,19 +6,13 @@ use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, FontFamily, FontId, RichText, Sense, Stroke, TextEdit, Vec2};
 
-use crate::http::{
-    filename_from_url, http_payload_present, http_resume_present, start_url_download_reported,
-};
 use crate::identity::{self, AppKind, VERSION_TAG};
-use crate::jobs::{self, LoadJobs, PersistedJob, RestoreAction};
+use crate::jobs::{self, JobKind};
 use crate::paths;
-use crate::progress::{format_eta, format_size, format_speed, is_stopped, until_stop, JobSnapshot};
-use crate::torrent::{
-    magnet_display_name, magnet_info_hash, magnet_payload_present, magnet_sub_folder,
-    start_download_reported,
-};
+use crate::progress::{format_eta, format_size, format_speed, JobSnapshot};
+use crate::session::{self, Job, Session, SessionEvent};
+use crate::torrent::{magnet_info_hash, magnet_sub_folder};
 use crate::update::{self, AvailableUpdate};
-use crate::validate::{is_valid_download_url, is_valid_magnet_url};
 
 const WINDOW_INNER: [f32; 2] = [960.0, 580.0];
 const WINDOW_MIN: [f32; 2] = [760.0, 440.0];
@@ -77,9 +71,7 @@ fn mix_rgb(a: Color32, b: Color32, toward_b: f32) -> Color32 {
 }
 
 fn progress_is_indeterminate(status: &str) -> bool {
-    matches!(status, "queued" | "starting")
-        || status.contains("Initializing")
-        || status.contains("verifying")
+    matches!(status, "queued" | "starting") || status.contains("Initializing")
 }
 
 fn job_bar_fraction(status: &str, downloaded: u64, total: u64) -> Option<f32> {
@@ -214,70 +206,13 @@ fn mode_from_kind(kind: jobs::JobKind) -> Mode {
     }
 }
 
-fn persist_record(job: &Job) -> PersistedJob {
-    PersistedJob {
-        id: job.id,
-        kind: match job.kind {
-            Mode::Magnet => "magnet".into(),
-            Mode::Http => "http".into(),
-        },
-        source: job.source.clone(),
-        dest: job.dest.clone(),
-        seed: job.seed,
-        added: job.added.clone(),
-        title: job.snapshot.title(),
-        downloaded: job
-            .snapshot
-            .downloaded
-            .load(std::sync::atomic::Ordering::Relaxed),
-        total: job
-            .snapshot
-            .total
-            .load(std::sync::atomic::Ordering::Relaxed),
-        status: job.snapshot.status(),
-        paused: job.snapshot.is_paused(),
-        error: job.snapshot.error(),
-    }
-}
-
-fn persist_fingerprint(jobs: &[Job]) -> String {
-    jobs.iter()
-        .map(|job| {
-            let record = persist_record(job);
-            format!(
-                "{}:{}:{}:{}:{}:{}:{:?}:{}",
-                record.id,
-                record.kind,
-                record.downloaded,
-                record.total,
-                record.status,
-                record.paused,
-                record.error,
-                record.title
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("|")
-}
-
-const MAX_ACTIVE_DOWNLOADS: usize = 4;
 const CHECKING_UPDATES: &str = "checking for updates…";
 const NO_UPDATES: &str = "no updates found";
 const STATUS_HOLD: Duration = Duration::from_millis(1500);
 const FAIL_HOLD: Duration = Duration::from_secs(5);
-const PERSIST_EVERY: Duration = Duration::from_secs(2);
 const SLIDER_REPAINT: Duration = Duration::from_millis(16);
 
 enum WorkerCmd {
-    Download {
-        id: u64,
-        mode: Mode,
-        source: String,
-        snapshot: Arc<JobSnapshot>,
-        seed: bool,
-        dest: PathBuf,
-    },
-    Probe(Vec<ProbeSpec>),
     Check,
     Install {
         update: AvailableUpdate,
@@ -285,42 +220,11 @@ enum WorkerCmd {
     },
 }
 
-struct ProbeSpec {
-    id: u64,
-    kind: Mode,
-    source: String,
-    dest: PathBuf,
-    filename: String,
-}
-
-struct ProbeResult {
-    id: u64,
-    present: bool,
-    resumable: bool,
-}
-
 enum WorkerEvent {
     UpdateAvailable(AvailableUpdate),
     UpToDate,
     UpdateFailed(String),
     Installed(String),
-    DownloadFailed { id: u64, error: String },
-    Probed(Vec<ProbeResult>),
-}
-
-struct Job {
-    id: u64,
-    kind: Mode,
-    source: String,
-    snapshot: Arc<JobSnapshot>,
-    added: String,
-    last_bytes: u64,
-    last_uploaded: u64,
-    last_check: Instant,
-    speed: f64,
-    up_speed: f64,
-    seed: bool,
-    dest: PathBuf,
 }
 
 struct Toast {
@@ -344,8 +248,7 @@ struct GuiApp {
     mode: Mode,
     input: String,
     dest: PathBuf,
-    jobs: Vec<Job>,
-    next_id: u64,
+    session: Session,
     tx: Sender<WorkerCmd>,
     events: Receiver<WorkerEvent>,
     auto_update: bool,
@@ -357,8 +260,6 @@ struct GuiApp {
     banner_dismissed: bool,
     installed_tag: Option<String>,
     job_query: String,
-    persist_at: Instant,
-    saved_fingerprint: String,
     glass_tint: u8,
     applied_glass_tint: u8,
     settings_open: bool,
@@ -405,6 +306,8 @@ impl GuiApp {
         let launch_error = paths::ensure_dir(&dest)
             .err()
             .map(|error| format!("{error:#}"));
+        let jobs_path = jobs::jobs_path().unwrap_or_else(|_| dest.join("jobs.json"));
+        let session = Session::open(dest.clone(), jobs_path, seed);
         let _ = cmd_tx.send(WorkerCmd::Check);
         let mut app = Self {
             theme,
@@ -412,8 +315,7 @@ impl GuiApp {
             mode: Mode::Magnet,
             input: String::new(),
             dest,
-            jobs: Vec::new(),
-            next_id: 1,
+            session,
             tx: cmd_tx,
             events: event_rx,
             auto_update,
@@ -425,8 +327,6 @@ impl GuiApp {
             banner_dismissed: false,
             installed_tag: None,
             job_query: String::new(),
-            persist_at: Instant::now(),
-            saved_fingerprint: String::new(),
             glass_tint,
             applied_glass_tint: glass_tint,
             settings_open: false,
@@ -460,113 +360,16 @@ impl GuiApp {
     }
 
     fn hydrate_jobs(&mut self) {
-        match jobs::load_jobs() {
-            LoadJobs::Empty => {}
-            LoadJobs::Corrupt(error) => {
+        match self.session.hydrate() {
+            session::Hydrate::Empty | session::Hydrate::Loaded => {}
+            session::Hydrate::Corrupt(error) => {
                 self.toast_fail(format!("could not read saved jobs: {error}"));
             }
-            LoadJobs::Loaded(records) => {
-                let mut probes = Vec::new();
-                for record in records {
-                    let Some(kind) = record.kind_id().map(mode_from_kind) else {
-                        continue;
-                    };
-                    let snapshot = Arc::new(JobSnapshot::default());
-                    record.apply_to(&snapshot);
-                    let wants_engine = record.wants_engine();
-                    if record.id >= self.next_id {
-                        self.next_id = record.id + 1;
-                    }
-                    if wants_engine {
-                        probes.push(ProbeSpec {
-                            id: record.id,
-                            kind,
-                            source: record.source.clone(),
-                            dest: record.dest.clone(),
-                            filename: record.title.clone(),
-                        });
-                    }
-                    self.jobs.push(Job {
-                        id: record.id,
-                        kind,
-                        source: record.source,
-                        snapshot,
-                        added: record.added,
-                        last_bytes: record.downloaded,
-                        last_uploaded: 0,
-                        last_check: Instant::now(),
-                        speed: 0.0,
-                        up_speed: 0.0,
-                        seed: record.seed,
-                        dest: record.dest,
-                    });
-                }
-                self.saved_fingerprint = persist_fingerprint(&self.jobs);
-                if !probes.is_empty() {
-                    let _ = self.tx.send(WorkerCmd::Probe(probes));
-                }
-            }
         }
-    }
-
-    fn persisted_jobs(&self) -> Vec<PersistedJob> {
-        self.jobs.iter().map(persist_record).collect()
     }
 
     fn persist_jobs(&mut self, force: bool) {
-        let fingerprint = persist_fingerprint(&self.jobs);
-        if fingerprint == self.saved_fingerprint {
-            return;
-        }
-        if !force && self.persist_at.elapsed() < PERSIST_EVERY {
-            return;
-        }
-        if jobs::save_jobs(&self.persisted_jobs()).is_ok() {
-            self.saved_fingerprint = fingerprint;
-            self.persist_at = Instant::now();
-        }
-    }
-
-    fn enqueue_existing(&self, index: usize) {
-        let Some(job) = self.jobs.get(index) else {
-            return;
-        };
-        let _ = self.tx.send(WorkerCmd::Download {
-            id: job.id,
-            mode: job.kind,
-            source: job.source.clone(),
-            snapshot: Arc::clone(&job.snapshot),
-            seed: job.seed,
-            dest: job.dest.clone(),
-        });
-    }
-
-    fn apply_probes(&mut self, results: Vec<ProbeResult>) {
-        let mut missing = 0usize;
-        for result in results {
-            let Some(index) = self.jobs.iter().position(|job| job.id == result.id) else {
-                continue;
-            };
-            let record = persist_record(&self.jobs[index]);
-            match record.after_probe(result.present, result.resumable) {
-                RestoreAction::Start => self.enqueue_existing(index),
-                RestoreAction::Missing => {
-                    missing += 1;
-                    self.jobs[index]
-                        .snapshot
-                        .mark_stopped_with(record.missing_reason());
-                }
-                RestoreAction::Idle => {}
-            }
-        }
-        if missing > 0 {
-            self.toast_fail(if missing == 1 {
-                "1 saved download is missing from its folder".into()
-            } else {
-                format!("{missing} saved downloads are missing from their folders")
-            });
-        }
-        self.persist_jobs(true);
+        self.session.persist(force);
     }
 
     fn apply_theme(&self, ctx: &egui::Context) {
@@ -599,125 +402,24 @@ impl GuiApp {
     }
 
     fn queue_job(&mut self) {
-        let source = self.input.trim().to_string();
-        if source.is_empty() {
-            self.toast_fail("paste a magnet or HTTP URL first");
-            return;
-        }
-        let valid = match self.mode {
-            Mode::Magnet => is_valid_magnet_url(&source),
-            Mode::Http => is_valid_download_url(&source),
+        let kind = match self.mode {
+            Mode::Magnet => JobKind::Magnet,
+            Mode::Http => JobKind::Http,
         };
-        if !valid {
-            self.toast_fail(format!("invalid {} URL", self.mode.label().to_lowercase()));
-            return;
+        match self.session.queue(kind, &self.input) {
+            Ok(_) => self.input.clear(),
+            Err(error) => self.toast_fail(error),
         }
-        if let Some(note) = self.duplicate_active_note(self.mode, &source) {
-            self.toast_fail(note);
-            return;
-        }
-        let snapshot = Arc::new(JobSnapshot::default());
-        snapshot.set_status("queued");
-        match self.mode {
-            Mode::Magnet => {
-                if let Some(name) = magnet_display_name(&source) {
-                    snapshot.set_title(name);
-                }
-            }
-            Mode::Http => snapshot.set_title(filename_from_url(&source, None)),
-        }
-        let id = self.next_id;
-        self.next_id += 1;
-        let seed = self.mode == Mode::Magnet && self.seed;
-        let dest = self.dest.clone();
-        let job = Job {
-            id,
-            kind: self.mode,
-            source: source.clone(),
-            snapshot: Arc::clone(&snapshot),
-            added: today(),
-            last_bytes: 0,
-            last_uploaded: 0,
-            last_check: Instant::now(),
-            speed: 0.0,
-            up_speed: 0.0,
-            seed,
-            dest: dest.clone(),
-        };
-        let _ = self.tx.send(WorkerCmd::Download {
-            id,
-            mode: self.mode,
-            source,
-            snapshot,
-            seed,
-            dest,
-        });
-        self.jobs.push(job);
-        self.input.clear();
-        self.persist_jobs(true);
     }
 
-    fn restart_job(&mut self, index: usize, seed: bool, dest: PathBuf) -> bool {
-        let Some(job) = self.jobs.get(index) else {
-            return false;
-        };
-        let kind = job.kind;
-        let source = job.source.clone();
-        if let Some(note) = self.duplicate_active_note(kind, &source) {
-            self.toast_fail(note);
-            return false;
-        }
-        let title = job.snapshot.title();
-        let snapshot = Arc::new(JobSnapshot::default());
-        snapshot.set_status("queued");
-        if !title.is_empty() {
-            snapshot.set_title(title);
-        }
-        let id = self.next_id;
-        self.next_id += 1;
-        let seed = kind == Mode::Magnet && seed;
-        let _ = self.tx.send(WorkerCmd::Download {
-            id,
-            mode: kind,
-            source: source.clone(),
-            snapshot: Arc::clone(&snapshot),
-            seed,
-            dest: dest.clone(),
-        });
-        self.jobs[index] = Job {
-            id,
-            kind,
-            source,
-            snapshot,
-            added: today(),
-            last_bytes: 0,
-            last_uploaded: 0,
-            last_check: Instant::now(),
-            speed: 0.0,
-            up_speed: 0.0,
-            seed,
-            dest,
-        };
-        self.persist_jobs(true);
-        true
-    }
-
-    fn duplicate_active_note(&self, kind: Mode, source: &str) -> Option<String> {
-        let conflict = self.jobs.iter().any(|job| {
-            if !job.snapshot.is_active() || job.kind != kind {
-                return false;
+    fn restart_job(&mut self, id: u64, seed: bool, dest: PathBuf) -> bool {
+        match self.session.restart(id, seed, dest) {
+            Ok(_) => true,
+            Err(error) => {
+                self.toast_fail(error);
+                false
             }
-            match kind {
-                Mode::Magnet => magnet_info_hash(source).is_some_and(|hash| {
-                    magnet_info_hash(&job.source).as_deref() == Some(hash.as_str())
-                }),
-                Mode::Http => job.source == source,
-            }
-        });
-        conflict.then(|| match kind {
-            Mode::Magnet => "that magnet is already downloading".into(),
-            Mode::Http => "that URL is already downloading".into(),
-        })
+        }
     }
 
     fn toast_info(&mut self, text: impl Into<String>) {
@@ -805,6 +507,7 @@ impl GuiApp {
             update::set_download_dir(&path).map(|config| {
                 let dest = paths::effective_dir(&config);
                 self.dest = dest.clone();
+                self.session.set_dest(dest.clone());
                 dest
             })
         };
@@ -874,15 +577,15 @@ impl GuiApp {
                         .retain(|toast| !toast.text.starts_with("installing "));
                     self.installed_tag = Some(tag);
                 }
-                WorkerEvent::DownloadFailed { id, error } => {
-                    if let Some(job) = self.jobs.iter().find(|job| job.id == id) {
-                        if !job.snapshot.is_stopped() {
-                            job.snapshot.set_error(error);
-                        }
-                    }
-                    self.persist_jobs(true);
-                }
-                WorkerEvent::Probed(results) => self.apply_probes(results),
+            }
+        }
+        for event in self.session.drain_events() {
+            if let SessionEvent::RestoredMissing(missing) = event {
+                self.toast_fail(if missing == 1 {
+                    "1 saved download is missing from its folder".into()
+                } else {
+                    format!("{missing} saved downloads are missing from their folders")
+                });
             }
         }
     }
@@ -890,7 +593,7 @@ impl GuiApp {
 
 impl eframe::App for GuiApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        let _ = jobs::save_jobs(&self.persisted_jobs());
+        self.session.persist(true);
         // Windowed value only; fullscreen never mutates `glass_tint`.
         let _ = update::set_glass_tint(self.glass_tint);
     }
@@ -1036,6 +739,7 @@ impl eframe::App for GuiApp {
                             seed_toggle(ui, self.seed, palette, self.mode == Mode::Magnet)
                         {
                             self.seed = seed;
+                            self.session.set_seed(seed);
                             let _ = update::set_seed(seed);
                         }
                         ui.add_space(gap);
@@ -1173,7 +877,7 @@ impl eframe::App for GuiApp {
                         ui.add_space(8.0);
                     }
                 }
-                if self.jobs.is_empty() {
+                if self.session.is_empty() {
                     ui.centered_and_justified(|ui| {
                         glass_label(
                             ui,
@@ -1184,9 +888,7 @@ impl eframe::App for GuiApp {
                     });
                     return;
                 }
-                for job in &mut self.jobs {
-                    tick_job_rates(job);
-                }
+                let jobs = self.session.jobs();
                 const SEARCH_H: f32 = 28.0;
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), SEARCH_H),
@@ -1229,8 +931,7 @@ impl eframe::App for GuiApp {
                     },
                 );
                 ui.add_space(8.0);
-                let visible: Vec<usize> = self
-                    .jobs
+                let visible: Vec<usize> = jobs
                     .iter()
                     .enumerate()
                     .filter(|(_, job)| job_matches(job, &self.job_query))
@@ -1254,7 +955,7 @@ impl eframe::App for GuiApp {
                         if stripe > 0 {
                             ui.add_space(8.0);
                         }
-                        let job = &mut self.jobs[index];
+                        let job = &jobs[index];
                         let downloaded = job
                             .snapshot
                             .downloaded
@@ -1294,7 +995,7 @@ impl eframe::App for GuiApp {
                         card.show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     glass_label(ui, job.kind.label(), 13.0, palette.dim);
-                                    if job.kind == Mode::Magnet {
+                                    if job.kind == JobKind::Magnet {
                                         ui.add_space(6.0);
                                         seed_glyph(ui, job.seed, true, false, false, palette);
                                     }
@@ -1346,7 +1047,7 @@ impl eframe::App for GuiApp {
                                                 {
                                                     clear_index = Some(index);
                                                 }
-                                                if (job.kind == Mode::Magnet
+                                                if (job.kind == JobKind::Magnet
                                                     || job.snapshot.is_stopped())
                                                     && ui
                                                         .button(ink("restart", 12.0, palette.fg))
@@ -1370,7 +1071,7 @@ impl eframe::App for GuiApp {
                                 } else {
                                     "N/A".into()
                                 };
-                                let sharing = job.kind == Mode::Magnet && job.seed;
+                                let sharing = job.kind == JobKind::Magnet && job.seed;
                                 let seeding = sharing
                                     && job.snapshot.is_active()
                                     && total > 0
@@ -1412,11 +1113,8 @@ impl eframe::App for GuiApp {
                     }
                 });
                 if let Some(index) = reveal {
-                    let reveal_job = self.jobs.get(index).map(|job| {
-                        (job.kind, job.source.clone(), job.dest.clone())
-                    });
-                    if let Some((kind, source, dest)) = reveal_job {
-                        self.reveal_path(kind, &source, &dest);
+                    if let Some(job) = jobs.get(index) {
+                        self.reveal_path(mode_from_kind(job.kind), &job.source, &job.dest);
                     }
                 }
                 if let Some(source) = copy_source {
@@ -1428,21 +1126,21 @@ impl eframe::App for GuiApp {
                     }
                 }
                 if let Some(index) = open_restart {
-                    if let Some(job) = self.jobs.get(index) {
+                    if let Some(job) = jobs.get(index) {
                         self.restart = Some(RestartDraft {
                             id: job.id,
-                            kind: job.kind,
+                            kind: mode_from_kind(job.kind),
                             seed: job.seed,
                             dest: job.dest.clone(),
                         });
                     }
                 } else if let Some(index) = clear_index {
-                    if self.restart.as_ref().is_some_and(|draft| {
-                        self.jobs.get(index).is_some_and(|job| job.id == draft.id)
-                    }) {
-                        self.restart = None;
+                    if let Some(job) = jobs.get(index) {
+                        if self.restart.as_ref().is_some_and(|draft| draft.id == job.id) {
+                            self.restart = None;
+                        }
+                        self.session.remove(job.id);
                     }
-                    self.jobs.remove(index);
                     persist_now = true;
                 }
                 if persist_now {
@@ -1549,7 +1247,7 @@ impl GuiApp {
         let Some(draft) = self.restart.as_ref() else {
             return;
         };
-        if !self.jobs.iter().any(|job| job.id == draft.id) {
+        if !self.session.has_job(draft.id) {
             self.restart = None;
             return;
         }
@@ -1613,13 +1311,10 @@ impl GuiApp {
             let Some(draft) = self.restart.as_ref() else {
                 return;
             };
-            let Some(index) = self.jobs.iter().position(|job| job.id == draft.id) else {
-                self.restart = None;
-                return;
-            };
             let seed = draft.seed;
             let dest = draft.dest.clone();
-            if self.restart_job(index, seed, dest) {
+            let id = draft.id;
+            if self.restart_job(id, seed, dest) {
                 self.restart = None;
             }
         } else if !open {
@@ -2275,40 +1970,6 @@ fn ink(text: impl Into<String>, size: f32, color: Color32) -> RichText {
         .color(color)
 }
 
-fn today() -> String {
-    chrono::Local::now().format("%Y-%m-%d").to_string()
-}
-
-fn tick_job_rates(job: &mut Job) {
-    let now = Instant::now();
-    let downloaded = job
-        .snapshot
-        .downloaded
-        .load(std::sync::atomic::Ordering::Relaxed);
-    let uploaded = job
-        .snapshot
-        .uploaded
-        .load(std::sync::atomic::Ordering::Relaxed);
-    let engine_up = job
-        .snapshot
-        .upload_bps
-        .load(std::sync::atomic::Ordering::Relaxed) as f64;
-    let elapsed = now.saturating_duration_since(job.last_check).as_secs_f64();
-    if elapsed >= 0.4 {
-        job.speed = (downloaded.saturating_sub(job.last_bytes) as f64) / elapsed;
-        job.up_speed = if engine_up > 0.0 {
-            engine_up
-        } else {
-            (uploaded.saturating_sub(job.last_uploaded) as f64) / elapsed
-        };
-        job.last_bytes = downloaded;
-        job.last_uploaded = uploaded;
-        job.last_check = now;
-    } else if engine_up > 0.0 {
-        job.up_speed = engine_up;
-    }
-}
-
 fn job_matches(job: &Job, query: &str) -> bool {
     let needle = query.trim();
     if needle.is_empty() {
@@ -2391,84 +2052,13 @@ fn paint_folder(painter: &egui::Painter, rect: egui::Rect, color: Color32) {
 fn worker_loop(rx: Receiver<WorkerCmd>, tx: Sender<WorkerEvent>) {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let handle = runtime.handle().clone();
-    let limiter = Arc::new(tokio::sync::Semaphore::new(MAX_ACTIVE_DOWNLOADS));
     let _keep_alive = thread::spawn(move || {
         runtime.block_on(std::future::pending::<()>());
     });
     while let Ok(cmd) = rx.recv() {
         let tx = tx.clone();
-        let limiter = Arc::clone(&limiter);
         handle.spawn(async move {
             match cmd {
-                WorkerCmd::Download {
-                    id,
-                    mode,
-                    source,
-                    snapshot,
-                    seed,
-                    dest,
-                } => {
-                    if snapshot.should_stop() {
-                        snapshot.mark_stopped();
-                        return;
-                    }
-                    if !snapshot.is_paused() {
-                        snapshot.set_status("queued");
-                    }
-                    let permit = tokio::select! {
-                        permit = limiter.acquire_owned() => permit.ok(),
-                        _ = until_stop(Some(snapshot.as_ref())) => {
-                            snapshot.mark_stopped();
-                            return;
-                        }
-                    };
-                    let Some(_permit) = permit else {
-                        return;
-                    };
-                    if snapshot.should_stop() {
-                        snapshot.mark_stopped();
-                        return;
-                    }
-                    if !snapshot.is_paused() {
-                        snapshot.set_status("starting");
-                    }
-                    let result = match mode {
-                        Mode::Magnet => {
-                            start_download_reported(&source, snapshot, seed, dest).await
-                        }
-                        Mode::Http => start_url_download_reported(&source, snapshot, dest).await,
-                    };
-                    if let Err(error) = result {
-                        if !is_stopped(&error) {
-                            let _ = tx.send(WorkerEvent::DownloadFailed {
-                                id,
-                                error: format!("{error:#}"),
-                            });
-                        }
-                    }
-                }
-                WorkerCmd::Probe(specs) => {
-                    let results = specs
-                        .into_iter()
-                        .map(|spec| match spec.kind {
-                            Mode::Magnet => ProbeResult {
-                                id: spec.id,
-                                present: magnet_payload_present(&spec.dest, &spec.source),
-                                resumable: false,
-                            },
-                            Mode::Http => ProbeResult {
-                                id: spec.id,
-                                present: http_payload_present(
-                                    &spec.dest,
-                                    &spec.source,
-                                    &spec.filename,
-                                ),
-                                resumable: http_resume_present(&spec.dest, &spec.source),
-                            },
-                        })
-                        .collect();
-                    let _ = tx.send(WorkerEvent::Probed(results));
-                }
                 WorkerCmd::Check => match update::check_latest(AppKind::Gui).await {
                     Ok(Some(update)) => {
                         let _ = tx.send(WorkerEvent::UpdateAvailable(update));
@@ -2536,15 +2126,10 @@ mod tests {
 
     #[test]
     fn date_format_is_iso() {
-        let value = today();
+        let value = chrono::Local::now().format("%Y-%m-%d").to_string();
         assert_eq!(value.len(), 10);
         assert_eq!(&value[4..5], "-");
         assert_eq!(&value[7..8], "-");
-    }
-
-    #[test]
-    fn caps_active_downloads() {
-        assert_eq!(MAX_ACTIVE_DOWNLOADS, 4);
     }
 
     #[test]
@@ -2597,7 +2182,7 @@ mod tests {
         snapshot.set_title(title);
         Job {
             id: 1,
-            kind: Mode::Http,
+            kind: JobKind::Http,
             source: source.into(),
             snapshot,
             added: "2026-10-27".into(),
@@ -2617,6 +2202,7 @@ mod tests {
         assert!(
             job_bar_fraction("Initializing torrent client & verifying data...", 25, 100).is_none()
         );
+        assert_eq!(job_bar_fraction("verifying", 25, 100), Some(0.25));
         assert!(job_bar_fraction("downloading", 250, 1).is_none());
         assert_eq!(job_bar_fraction("downloading", 25, 100), Some(0.25));
         assert_eq!(job_bar_fraction("paused", 25, 100), Some(0.25));
@@ -2646,35 +2232,6 @@ mod tests {
         let mid_right = indeterminate_bar_offset(period * 0.75, span);
         assert!((mid_left - mid_right).abs() < 0.02);
         assert!(mid_left > travel * 0.4 && mid_left < travel * 0.6);
-    }
-
-    #[test]
-    fn persist_record_roundtrips_paused_and_dest() {
-        let job = sample_job("Sintel", "https://example.com/sintel.mkv", "/tmp/films");
-        job.snapshot.set_paused(true);
-        job.snapshot
-            .downloaded
-            .store(40, std::sync::atomic::Ordering::Relaxed);
-        let record = persist_record(&job);
-        assert_eq!(record.kind, "http");
-        assert_eq!(record.dest, PathBuf::from("/tmp/films"));
-        assert!(record.paused);
-        assert_eq!(record.downloaded, 40);
-        assert_eq!(record.after_probe(true, false), RestoreAction::Missing);
-        assert_eq!(record.after_probe(true, true), RestoreAction::Start);
-        let snapshot = JobSnapshot::default();
-        record.apply_to(&snapshot);
-        assert!(snapshot.is_paused());
-        assert!(snapshot.is_active());
-    }
-
-    #[test]
-    fn missing_probe_does_not_want_engine() {
-        let job = sample_job("Sintel", "https://example.com/sintel.mkv", "/tmp/films");
-        job.snapshot.mark_stopped_with(jobs::HTTP_NOT_RESUMABLE);
-        let record = persist_record(&job);
-        assert_eq!(record.after_probe(false, false), RestoreAction::Idle);
-        assert!(!record.wants_engine());
     }
 
     #[test]

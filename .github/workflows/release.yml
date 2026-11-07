@@ -110,9 +110,56 @@ jobs:
           path: dist/${{ matrix.gui_artifact }}.app.zip
           if-no-files-found: error
 
+  android-apk:
+    name: build (torrenter-android.apk)
+    needs: verify-tag-on-main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-android-apk
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Android SDK platforms
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Native libraries
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          cargo ndk -P 30 -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs \
+            build --locked --features ffi --release --lib
+      - name: Assemble debug APK
+        run: gradle assembleDebug
+        working-directory: android
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/torrenter-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: torrenter-android.apk
+          path: dist/torrenter-android.apk
+          if-no-files-found: error
+
   publish:
     name: attach binaries to GitHub Release
-    needs: [verify-tag-on-main, build]
+    needs: [verify-tag-on-main, build, android-apk]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

@@ -21,7 +21,7 @@ torrenter update                 # install the latest matching CLI asset now
 
 While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop.
 
-Downloader with two engines, two desktop fronts, and an **Android sideload APK**. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary and a **native GUI** binary (egui, no HTML/CSS). Build the APK from this repo (see [Android](#android)); it is not a Play Store listing and has no in-app updater.
+Downloader with two engines, two desktop fronts, and an **Android sideload APK**. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary, a **native GUI** binary (egui, no HTML/CSS), and `torrenter-android.apk`. It is not a Play Store listing and has no in-app updater.
 
 1. **Magnet / torrent** — BitTorrent via [librqbit](https://github.com/ikatson/rqbit)
 2. **Direct HTTP(S)** — 4-part parallel download with byte-range resume
@@ -132,18 +132,18 @@ No Rust/Cargo is needed at runtime. Building from source is in the [Development]
 
 ## Android
 
-Sideload only — not on Google Play. minSdk **30**, ABIs `arm64-v8a` + `x86_64`. Same engines and chrome as the desktop GUI: magnet launcher icon, phosphor / amber / ice / scarlet / violet, MAGNET ⇄ HTTP, share/leech (seed ON/OFF), verifying then downloading, queue of four. There is **no** in-app updater (the APK is not a `torrenter-*` / `torrenter-gui-*` asset).
+Sideload only — not on Google Play. minSdk **30**, ABIs `arm64-v8a` + `x86_64`. Same engines and chrome as the desktop GUI: magnet launcher icon, phosphor / amber / ice / scarlet / violet, MAGNET ⇄ HTTP, share/leech (seed ON/OFF), verifying then downloading, queue of four. There is **no** in-app updater (the APK is not a desktop `torrenter-*` / `torrenter-gui-*` asset).
 
-1. Build a debug APK from this tree (see [Development](#development)):
+1. Open the [latest GitHub Release](https://github.com/danted4/torrenter/releases/latest) and download `torrenter-android.apk` (debug-signed sideload, arm64 + x86_64). Or build it from this tree (see [Development](#development)):
 
    ```bash
    ./android/build-native.sh
    cd android && gradle assembleDebug
    ```
 
-   The APK lands at `android/app/build/outputs/apk/debug/`. Copy it to the phone (USB, Nearby Share, or a file you trust).
+   A local build lands at `android/app/build/outputs/apk/debug/`. Copy the APK to the phone (USB, Nearby Share, or a file you trust).
 
-2. On the phone: allow **Install unknown apps** for that source, then open the APK. Play Protect / unknown-source warnings are expected — the build is unsigned sideload.
+2. On the phone: allow **Install unknown apps** for that source, then open the APK. Play Protect / unknown-source warnings are expected — the build is debug-signed sideload.
 3. Grant **All files access** (required). Output is public `Download/torrenter`, same layout as desktop (`<name>/` for magnets, `.resume/` for HTTP).
 4. Allow **notifications** so the foreground service can keep jobs alive when you leave the app.
 5. If Android asks to ignore battery optimizations, allow it. Denying that does not block jobs; OEMs may still freeze seeding.
@@ -279,7 +279,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 CI on every push and pull request to `main`: fmt, clippy (`-D warnings`), tests on Linux, macOS, and Windows (`--all-features` so the GUI compiles). Linux CI (and local `--all-features` builds) need GTK 3 + xcb **dev** packages: `libgtk-3-dev libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config`.
 
-Release: `git tag vX.Y.Z && git push origin vX.Y.Z` (commit must already be on `main`). That publishes CLI + GUI binaries, macOS `torrenter-gui-*.app.zip`, and `SHA256SUMS`. Doc-only changes on `main` do not need a tag.
+Release: `git tag vX.Y.Z && git push origin vX.Y.Z` (commit must already be on `main`). That publishes CLI + GUI binaries, macOS `torrenter-gui-*.app.zip`, `torrenter-android.apk`, and `SHA256SUMS`. Doc-only changes on `main` do not need a tag.
 
 ## Troubleshooting
 

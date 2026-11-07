@@ -1,4 +1,4 @@
-# torrenter &nbsp;  &nbsp; <a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="28" height="28" align="absmiddle"></a> <a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="28" height="28" align="absmiddle"></a> <a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="28" height="28" align="absmiddle"></a> &nbsp;  &nbsp;
+# torrenter &nbsp;  &nbsp; <a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="28" height="28" align="absmiddle"></a> <a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="28" height="28" align="absmiddle"></a> <a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="28" height="28" align="absmiddle"></a> <a href="#android"><img src="docs/os-android.svg" alt="Android" width="28" height="28" align="absmiddle"></a> &nbsp;  &nbsp;
 
 **torrenter gui**
 
@@ -21,7 +21,7 @@ torrenter update                 # install the latest matching CLI asset now
 
 While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop.
 
-Downloader with two engines and two fronts. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary and a **native GUI** binary (egui, no HTML/CSS).
+Downloader with two engines, two desktop fronts, and an **Android sideload APK**. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary and a **native GUI** binary (egui, no HTML/CSS). Build the APK from this repo (see [Android](#android)); it is not a Play Store listing and has no in-app updater.
 
 1. **Magnet / torrent** — BitTorrent via [librqbit](https://github.com/ikatson/rqbit)
 2. **Direct HTTP(S)** — 4-part parallel download with byte-range resume
@@ -130,6 +130,28 @@ If you clicked Don’t Allow, open **System Settings → Network → Firewall** 
 
 No Rust/Cargo is needed at runtime. Building from source is in the [Development](#development) section.
 
+## Android
+
+Sideload only — not on Google Play. minSdk **30**, ABIs `arm64-v8a` + `x86_64`. Same engines and chrome as the desktop GUI: magnet launcher icon, phosphor / amber / ice / scarlet / violet, MAGNET ⇄ HTTP, share/leech (seed ON/OFF), verifying then downloading, queue of four. There is **no** in-app updater (the APK is not a `torrenter-*` / `torrenter-gui-*` asset).
+
+1. Build a debug APK from this tree (see [Development](#development)):
+
+   ```bash
+   ./android/build-native.sh
+   cd android && gradle assembleDebug
+   ```
+
+   The APK lands at `android/app/build/outputs/apk/debug/`. Copy it to the phone (USB, Nearby Share, or a file you trust).
+
+2. On the phone: allow **Install unknown apps** for that source, then open the APK. Play Protect / unknown-source warnings are expected — the build is unsigned sideload.
+3. Grant **All files access** (required). Output is public `Download/torrenter`, same layout as desktop (`<name>/` for magnets, `.resume/` for HTTP).
+4. Allow **notifications** so the foreground service can keep jobs alive when you leave the app.
+5. If Android asks to ignore battery optimizations, allow it. Denying that does not block jobs; OEMs may still freeze seeding.
+
+Leaving the app (Back) keeps live jobs in a foreground service until they finish or you Stop. Reopen the app to restore incomplete jobs (`jobs.json` in app private storage). A reboot or process kill does **not** autostart torrenter. Share mode asks the LAN gateway to forward the listen port (UPnP); phones behind CGNAT can still finish at `U 0.00` with no inbound peers. Theme and seed live in app preferences, not desktop `config.json`.
+
+No Rust/Cargo is needed on the phone. Building the APK is in the [Development](#development) section.
+
 ## Two download modes
 
 | | **Magnet / torrent** | **Direct HTTP(S)** |
@@ -229,6 +251,7 @@ HTTP resume keeps `{sha256(url)[0..16]}.part-N` plus a small JSON manifest under
 - HTTP and updater timeouts: 20s connect, 60s between reads
 - Auto-update, magnet seed, GUI `theme`, GUI `glass_tint`, and optional `download_dir`: `~/.config/torrenter/config.json` (macOS: `~/Library/Application Support/torrenter/config.json`, Windows: `%APPDATA%\torrenter\config.json`). `seed` defaults to on. `theme` is `phosphor`, `amber`, `ice`, `scarlet`, or `violet` (default phosphor). `glass_tint` is 40–210 (default 60% of that range) and tints the frosted window on macOS/Windows; native fullscreen locks the wash at 100% without writing that override. Labels and the settings cog keep a light brush-stroke wash behind the glyphs so 0% tint stays readable on a light wallpaper. Windows 11 uses light Mica (acrylic only on Windows 10); DWM fills an inactive window with a solid theme color. Missing `download_dir` keeps following the live OS Downloads path. Auto-update stays on the GUI header; theme and tint sit in the cog.
 - GUI job list: `jobs.json` in that same folder. Each row keeps its own dest and share/leech. Corrupt files are moved to `jobs.json.bak`.
+- Android: dest is always public `Download/torrenter`. Job list is `jobs.json` under the app files dir. Theme and seed are SharedPreferences (`theme`, `seed`). No `config.json`, no glass tint, no updater.
 
 ## Development
 
@@ -241,6 +264,11 @@ cargo build --release
 cargo build --release --features gui --bin torrenter-gui
 ./target/release/torrenter              # Windows: .\target\release\torrenter.exe
 ./target/release/torrenter-gui          # Windows: .\target\release\torrenter-gui.exe
+
+# Android (needs rustup Android targets, NDK, cargo-ndk, Android SDK, JDK 17)
+./android/build-native.sh
+# AGP 8.7 needs JDK 17 (Java 21+ / 27 fails). Then:
+cd android && gradle assembleDebug
 ```
 
 ```bash
@@ -277,6 +305,10 @@ Release: `git tag vX.Y.Z && git push origin vX.Y.Z` (commit must already be on `
 | macOS: cannot be opened / unidentified developer | `xattr -dr com.apple.quarantine` on `torrenter.app` or the Mach-O, then right-click **Open** or **Privacy & Security → Open Anyway** (see [macOS](#macos)) |
 | macOS: local network / incoming connections | Click **Allow** (see [macOS](#macos)); repeats after updates |
 | Linux: no permission popup | Normal — Linux usually allows outbound with no prompt (see [Linux](#linux)) |
+| Android: blocked install / Play Protect | Allow install from that source, then open the APK (see [Android](#android)). Unsigned sideload is expected |
+| Android: cannot write downloads | Grant **All files access**; dest is `Download/torrenter` |
+| Android: jobs die in the background | Allow notifications and ignore battery optimizations; a reboot does not autostart the app |
+| Android: share magnet, `U 0.00` | Keep the app open; allow UPnP on the LAN; CGNAT still blocks inbound peers |
 
 ## Responsible use
 

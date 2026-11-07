@@ -8,6 +8,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use librqbit::{
     AddTorrent, AddTorrentOptions, DhtSessionConfig, ListenerOptions, Session, SessionOptions,
+    TorrentStatsState,
 };
 
 use crate::progress::{check_stop, is_stopped, watch_cli_controls, JobSnapshot, ProgressHandle};
@@ -262,6 +263,7 @@ pub async fn start_download_with(
     let folder_lock = magnet_folder_lock(&info_hash);
     let _folder = folder_lock.lock().await;
     if !progress.is_paused() {
+        progress.set_status("verifying");
         progress.set_message("Initializing torrent client & verifying data...");
     }
 
@@ -293,27 +295,46 @@ pub async fn start_download_with(
 fn share_listen() -> ListenerOptions {
     ListenerOptions {
         listen_addr: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+        enable_upnp_port_forwarding: true,
         ..Default::default()
     }
 }
 
-fn live_peers_and_upload(stats: &librqbit::TorrentStats) -> (u64, u64, f64) {
+fn live_peers_and_upload(stats: &librqbit::TorrentStats, session: &Session) -> (u64, u64, f64) {
+    let session_stats = session.stats_snapshot();
     let peers = stats
         .live
         .as_ref()
         .map(|live| live.snapshot.peer_stats.live as u64)
         .unwrap_or(0);
-    let uploaded = stats
+    let torrent_uploaded = stats
         .live
         .as_ref()
         .map(|live| live.snapshot.uploaded_bytes.max(stats.uploaded_bytes))
         .unwrap_or(stats.uploaded_bytes);
-    let up_speed = stats
+    let uploaded = torrent_uploaded.max(session_stats.counters.uploaded_bytes);
+    let torrent_up = stats
         .live
         .as_ref()
-        .map(|live| live.upload_speed.mbps * 1024.0 * 1024.0)
+        .map(|live| live.upload_speed.as_bytes() as f64)
         .unwrap_or(0.0);
+    let up_speed = torrent_up.max(session_stats.upload_speed.as_bytes() as f64);
     (peers, uploaded, up_speed)
+}
+
+fn apply_upload_stats(
+    progress: &ProgressHandle,
+    stats: &librqbit::TorrentStats,
+    session: &Session,
+) {
+    let (peers, uploaded, up_speed) = live_peers_and_upload(stats, session);
+    progress.set_uploaded(uploaded);
+    progress.set_upload_bps(up_speed);
+    if let Some(snapshot) = progress.snapshot() {
+        snapshot
+            .peers
+            .store(peers, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 async fn run_torrent(
@@ -342,7 +363,7 @@ async fn run_torrent(
     }
 
     if !progress.is_paused() {
-        progress.set_status("downloading");
+        progress.set_status("verifying");
     }
 
     if progress.announce() {
@@ -395,9 +416,7 @@ async fn run_torrent(
                 let total = stats.total_bytes.max(1);
                 progress.set_length(total);
                 progress.set_position(total);
-                let (peers, uploaded, up_speed) = live_peers_and_upload(&stats);
-                progress.set_uploaded(uploaded);
-                progress.set_upload_bps(up_speed);
+                apply_upload_stats(&progress, &stats, session);
                 if progress.is_paused() {
                     continue;
                 }
@@ -410,6 +429,7 @@ async fn run_torrent(
                 }
                 progress.set_status("seeding");
                 progress.use_seed_style();
+                let (peers, uploaded, up_speed) = live_peers_and_upload(&stats, session);
                 progress.set_seed_message(peers, uploaded, up_speed);
                 if progress.announce() {
                     println!("\nTorrent download finished — seeding until you press 2.");
@@ -452,6 +472,7 @@ async fn run_torrent(
                     progress.finish_and_clear();
                     bail!("{error}");
                 }
+                apply_upload_stats(&progress, &stats, session);
                 if !want_pause && download_done && !seed {
                     progress.finish();
                     if progress.announce() {
@@ -468,13 +489,14 @@ async fn run_torrent(
                     };
                     progress.set_length(total);
                     progress.set_position(position);
-                    let (peers, uploaded, up_speed) = live_peers_and_upload(&stats);
-                    progress.set_uploaded(uploaded);
-                    progress.set_upload_bps(up_speed);
+                    let (peers, uploaded, up_speed) = live_peers_and_upload(&stats, session);
+                    let verifying = matches!(stats.state, TorrentStatsState::Initializing { .. });
                     if download_done && seed {
                         progress.set_status("seeding");
                         progress.set_seed_message(peers, uploaded, up_speed);
-                    } else {
+                    } else if verifying {
+                        progress.set_status("verifying");
+                    } else if !download_done {
                         progress.set_status("downloading");
                         progress.set_message(format!("{peers}"));
                     }

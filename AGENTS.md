@@ -4,20 +4,23 @@ Guidance for coding agents working on this repository. Human-facing install, usa
 
 ## Project overview
 
-`torrenter` is a single Rust crate (`edition = "2021"`, MSRV **1.85**) that ships two binaries from one library:
+`torrenter` is a single Rust crate (`edition = "2021"`, MSRV **1.85**) that ships desktop binaries from one library, plus an in-repo Android app:
 
 | Binary | Path | Feature | Role |
 |--------|------|---------|------|
 | `torrenter` | `src/main.rs` | default | Interactive CLI + `magnet` / `http` / `update` subcommands |
 | `torrenter-gui` | `src/bin/torrenter-gui.rs` | `gui` (`eframe` 0.31) | Native egui window (no HTML/CSS) |
 | `macos-app` | `src/bin/macos-app.rs` | `macos-app` | Release-only: wrap the GUI Mach-O in `torrenter.app` and zip it. Not a user-facing binary. |
+| `uniffi-bindgen` | `src/bin/uniffi-bindgen.rs` | `ffi-bindgen` | Generate Kotlin/Swift bindings. Not a user-facing binary. |
 
 Both fronts call the same engines in `src/lib.rs`:
 
 - **Magnet / torrent** — `src/torrent.rs` via [librqbit](https://github.com/ikatson/rqbit) 9 (DHT in memory, output under `<dest>/<sanitized-name>/`, hash fallback / suffix on collision). Share mode uploads and keeps the session until Stop; leech mode disables upload and calls `session.stop()` at 100%. `.torrent` files are not accepted.
 - **Direct HTTP(S)** — `src/http.rs` via `reqwest` 0.12 + rustls, 4-part `Range` download with resume under `<dest>/.resume/`.
 - **Download dest** — `src/paths.rs`. Default `<OS Downloads>/torrenter`; optional `download_dir` in config after an explicit pick. `--dir` is one-shot.
-- **Progress / pause / stop** — `src/progress.rs` (`JobSnapshot`, `ProgressHandle`). CLI watches stdin (`1` pause, `2` stop); GUI shares the same snapshot.
+- **Session / queue** — `src/session.rs` (cap 4, duplicate hash/URL, persist, restore probes, Tokio engine). Desktop GUI and UniFFI both use it. Updater install stays on the GUI worker only.
+- **Progress / pause / stop** — `src/progress.rs` (`JobSnapshot`, `ProgressHandle`). CLI watches stdin (`1` pause, `2` stop); GUI and Android poll snapshots.
+- **Android / UniFFI** — feature `ffi` (`src/ffi.rs`, `cdylib`). Kotlin Compose app in `android/` (minSdk 30, arm64 + x86_64, FGS, public `Download/torrenter`, `MANAGE_EXTERNAL_STORAGE`). `TorrenterApp` owns `Engine` hydrate / drain / throttled persist; `DownloadService` is `START_NOT_STICKY` and must not open an engine after a kill. No Android types in the FFI. Build natives with `./android/build-native.sh`. Do not point `current_asset_name` at the APK.
 - **Opt-in updater** — `src/update.rs` from GitHub Releases + `SHA256SUMS`. CLI and GUI only replace their own asset family (`torrenter-*` vs `torrenter-gui-*`).
 - **Validation / identity** — `src/validate.rs`, `src/identity.rs` (`danted4/torrenter vX.Y.Z` from `CARGO_PKG_VERSION`).
 

@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Torrenter" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#FF0B0B0B</item>
+        <item name="android:navigationBarColor">#FF0B0B0B</item>
+    </style>
+</resources>

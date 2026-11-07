@@ -442,8 +442,6 @@ impl ProgressHandle {
             if let Some(snapshot) = &self.snapshot {
                 snapshot.peers.store(peers, Ordering::Relaxed);
             }
-        } else if let Some(snapshot) = &self.snapshot {
-            snapshot.set_status(message.clone());
         }
         self.bar.set_message(message);
     }
@@ -587,6 +585,18 @@ mod tests {
         seed.set_position(100);
         seed.set_message("2 | U: 1.00 KB @ 1.00 KB/s");
         seed.finish_and_clear();
+    }
+
+    #[test]
+    fn cli_init_message_does_not_replace_verifying_status() {
+        let snapshot = Arc::new(JobSnapshot::default());
+        let progress = ProgressHandle::gui(1, Arc::clone(&snapshot));
+        progress.set_status("verifying");
+        progress.set_message("Initializing torrent client & verifying data...");
+        assert_eq!(snapshot.status(), "verifying");
+        progress.set_message("0");
+        assert_eq!(snapshot.status(), "verifying");
+        assert_eq!(snapshot.peers.load(Ordering::Relaxed), 0);
     }
 
     #[test]

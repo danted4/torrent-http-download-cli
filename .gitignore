@@ -4,6 +4,10 @@ android/.gradle/
 android/**/build/
 android/local.properties
 android/**/jniLibs/
+ios/**/*.xcframework/
+ios/**/DerivedData/
+ios/generated/headers/
+ios/**/xcuserdata/
 .idea/
 node_modules
 package-lock.json

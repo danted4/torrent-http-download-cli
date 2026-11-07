@@ -1,6 +1,6 @@
 [package]
 name = "torrenter"
-version = "3.6.1"
+version = "3.7.0"
 edition = "2021"
 description = "CLI and native GUI: magnet/torrent and parallel multipart HTTP(S) with byte-range resume."
 license = "MIT"
@@ -25,6 +25,7 @@ gui = [
 ]
 macos-app = []
 android-ndk = []
+ios-xcframework = []
 ffi = ["dep:uniffi"]
 ffi-bindgen = ["ffi", "uniffi/cli"]
 
@@ -88,7 +89,7 @@ tempfile = "3"
 [lib]
 name = "torrenter"
 path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [[bin]]
 name = "torrenter"
@@ -113,3 +114,12 @@ required-features = ["android-ndk"]
 name = "uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 required-features = ["ffi-bindgen"]
+
+[[bin]]
+name = "ios-xcframework"
+path = "src/bin/ios-xcframework.rs"
+required-features = ["ios-xcframework"]
+
+# iOS has no SO_BINDTODEVICE; use the same IP_BOUND_IF path as macOS.
+[patch.crates-io]
+librqbit-dualstack-sockets = { path = "patches/librqbit-dualstack-sockets" }

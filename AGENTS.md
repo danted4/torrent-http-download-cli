@@ -4,7 +4,7 @@ Guidance for coding agents working on this repository. Human-facing install, usa
 
 ## Project overview
 
-`torrenter` is a single Rust crate (`edition = "2021"`, MSRV **1.85**) that ships desktop binaries from one library, plus an in-repo Android app:
+`torrenter` is a single Rust crate (`edition = "2021"`, MSRV **1.85**) that ships desktop binaries from one library, plus in-repo Android and iOS apps:
 
 | Binary | Path | Feature | Role |
 |--------|------|---------|------|
@@ -12,6 +12,7 @@ Guidance for coding agents working on this repository. Human-facing install, usa
 | `torrenter-gui` | `src/bin/torrenter-gui.rs` | `gui` (`eframe` 0.31) | Native egui window (no HTML/CSS) |
 | `macos-app` | `src/bin/macos-app.rs` | `macos-app` | Release-only: wrap the GUI Mach-O in `torrenter.app` and zip it. Not a user-facing binary. |
 | `android-ndk` | `src/bin/android-ndk.rs` | `android-ndk` | Host helper: UniFFI Kotlin + Android `jniLibs`. Not a user-facing binary. |
+| `ios-xcframework` | `src/bin/ios-xcframework.rs` | `ios-xcframework` | Host helper (macOS + full Xcode): UniFFI Swift + `TorrenterFFI.xcframework`. Not a user-facing binary. |
 | `uniffi-bindgen` | `src/bin/uniffi-bindgen.rs` | `ffi-bindgen` | Generate Kotlin/Swift bindings. Not a user-facing binary. |
 
 Both fronts call the same engines in `src/lib.rs`:
@@ -21,7 +22,7 @@ Both fronts call the same engines in `src/lib.rs`:
 - **Download dest** — `src/paths.rs`. Default `<OS Downloads>/torrenter`; optional `download_dir` in config after an explicit pick. `--dir` is one-shot.
 - **Session / queue** — `src/session.rs` (cap 4, duplicate hash/URL, persist, restore probes, Tokio engine). Desktop GUI and UniFFI both use it. Updater install stays on the GUI worker only.
 - **Progress / pause / stop** — `src/progress.rs` (`JobSnapshot`, `ProgressHandle`). CLI watches stdin (`1` pause, `2` stop); GUI and Android poll snapshots.
-- **Android / UniFFI** — feature `ffi` (`src/ffi.rs`, `cdylib`). Kotlin Compose app in `android/` (minSdk 30, arm64 + x86_64, FGS, public `Download/torrenter`, `MANAGE_EXTERNAL_STORAGE`). `TorrenterApp` owns `Engine` hydrate / drain / throttled persist; `DownloadService` is `START_NOT_STICKY` and must not open an engine after a kill. No Android types in the FFI. Build natives with `cargo run --features android-ndk --bin android-ndk`. Do not point `current_asset_name` at the APK.
+- **Android / UniFFI** — feature `ffi` (`src/ffi.rs`, `cdylib` + `staticlib`). Kotlin Compose app in `android/` (minSdk 30, arm64 + x86_64, FGS, public `Download/torrenter`, `MANAGE_EXTERNAL_STORAGE`). SwiftUI app in `ios/` (min iOS 16, leech-only, Documents dest, Application Support `jobs.json`, stop-on-Home, no Release IPA). `TorrenterApp` / `EngineOwner` own `Engine` hydrate / drain / throttled persist. Android `DownloadService` is `START_NOT_STICKY` and must not open an engine after a kill. No Android/iOS types in the FFI. Build natives with `cargo run --features android-ndk --bin android-ndk` or `cargo run --features ios-xcframework --bin ios-xcframework`. Do not point `current_asset_name` at the APK or an IPA.
 - **Opt-in updater** — `src/update.rs` from GitHub Releases + `SHA256SUMS`. CLI and GUI only replace their own asset family (`torrenter-*` vs `torrenter-gui-*`).
 - **Validation / identity** — `src/validate.rs`, `src/identity.rs` (`danted4/torrenter vX.Y.Z` from `CARGO_PKG_VERSION`).
 
@@ -47,9 +48,12 @@ cargo test --locked --all-targets --all-features
 
 # Focused tests
 cargo test --locked --all-features <name_substring>
+
+# iOS (macOS + full Xcode; CI job `ios xcframework and swift`)
+cargo run --locked --features ios-xcframework --bin ios-xcframework
 ```
 
-CI also sets `RUSTFLAGS=-D warnings`. Clippy and tests always use `--all-features` so `src/gui.rs` and `src/icon.rs` compile. On Linux, install the same GUI libs CI does before `--all-features` builds: `libgtk-3-dev libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config`.
+CI also sets `RUSTFLAGS=-D warnings`. Clippy and tests always use `--all-features` so `src/gui.rs` and `src/icon.rs` compile. On Linux, install the same GUI libs CI does before `--all-features` builds: `libgtk-3-dev libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config`. The iOS job rebuilds `TorrenterFFI.xcframework` and runs unsigned Simulator XCTest; it does not sign or install on a device.
 
 Release (do not tag unless the user asks): `git tag vX.Y.Z && git push origin vX.Y.Z` only after the commit is on `main`. Workflow: `.github/workflows/release.yml`. Bump `version` in `Cargo.toml` and add a [CHANGELOG.md](CHANGELOG.md) entry when shipping a release.
 
@@ -60,7 +64,7 @@ After code changes, run the relevant `fmt` / `clippy` / `test` commands and fix 
 - **Language:** Rust 2021. Prefer `anyhow::{Result, bail, Context}` at binaries and engine boundaries. Keep `?` paths; do not add `unwrap()` on fallible I/O or network unless the existing pattern is a poisoned lock recovery (`into_inner()`).
 - **Async:** Tokio multi-thread runtime. HTTP and torrent work is async; GUI (`eframe`) is sync and drives jobs through `JobSnapshot` / spawned tasks. Do not block the GUI thread on downloads.
 - **TLS / HTTP:** `reqwest` with `rustls-tls` only (no native-tls). Timeouts stay 20s connect / 60s between reads unless there is a documented reason to change them. HTTP resume and merge rules in README **How it works** are invariants: no zero-padding short 206 bodies; merge via `.{filename}.merge.tmp` then rename; single-stream GET does not resume.
-- **Torrent:** librqbit with `default-features = false` and `rust-tls` plus `disable-upload` so leech sessions can set `disable_upload`. DHT must stay in-memory (`DhtSessionConfig`). Share mode listens on an ephemeral TCP port and calls `session.stop()` only when the job is Stopped; leech mode never uploads and stops at 100%. Isolate output per sanitized display name (hash fallback); keep the in-process folder lock so the same hash cannot run twice.
+- **Torrent:** librqbit with `default-features = false` and `rust-tls` plus `disable-upload` so leech sessions can set `disable_upload`. DHT must stay in-memory (`DhtSessionConfig`). Share mode listens on an ephemeral TCP port and calls `session.stop()` only when the job is Stopped; leech mode never uploads and stops at 100%. Isolate output per sanitized display name (hash fallback); keep the in-process folder lock so the same hash cannot run twice. iOS uses `[patch.crates-io]` `patches/librqbit-dualstack-sockets` so bind-to-interface matches macOS (`IP_BOUND_IF`), not Linux `SO_BINDTODEVICE`.
 - **GUI:** `eframe` / egui, gated with `#[cfg(feature = "gui")]`. Keep phosphor / amber / ice / scarlet / violet themes. Theme and glass tint live in a cog popup; the auto-update slider stays on the header. macOS/Windows use a translucent window with OS backdrop blur (`src/glass.rs`: vibrancy on macOS, light Mica on Windows 11, acrylic SWCA on Windows 10). Windows DWM fills an inactive window with a solid theme color; do not re-apply glass on focus change. Do not use dark Mica (`Some(true)`) — it darkens 0% tint. Do not use Win11 `apply_acrylic` / `TRANSIENTWINDOW` on the main window — DWM can restore it as a tiny flyout pill. Linux stays opaque. Labels on glass keep a brush-stroke text wash. Cap concurrent jobs at 4; refuse a second active job with the same magnet info-hash or HTTP URL. Do not introduce a webview or HTML/CSS front.
 - **CLI:** `clap` derive. Interactive menu remains the no-args path. Startup auto-update stays TTY-only; `torrenter update` always runs when requested.
 - **Serialization:** `serde` / `serde_json`. Resume manifests use `camelCase` (`ResumeManifest` in `src/http.rs`). Updater config is `~` platform config dir `torrenter/config.json` (see `update::config_path`).

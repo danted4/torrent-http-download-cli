@@ -1,0 +1,222 @@
+import SwiftUI
+import UIKit
+
+struct ContentView: View {
+    @EnvironmentObject private var owner: EngineOwner
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var themeId = Prefs.theme()
+    @State private var input = ""
+    @State private var magnet = true
+    @State private var shareJob: JobView?
+
+    var colors: Palette { themePalette(themeId) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header(colors)
+            if let notice = owner.notice {
+                Text(notice)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundColor(colors.fail)
+            }
+            modeSwitch(colors)
+            urlField(colors)
+            Button("START") {
+                let source = input.trimmingCharacters(in: .whitespacesAndNewlines)
+                if owner.queue(kind: magnet ? .magnet : .http, source: source) {
+                    input = ""
+                }
+            }
+            .buttonStyle(MonoButton(palette: colors))
+            Text("On My iPhone/torrenter")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(colors.dim)
+            if owner.jobs.isEmpty {
+                Text("no jobs yet — paste a magnet or HTTP URL")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(colors.dim)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(owner.jobs, id: \.id) { job in
+                            JobCard(
+                                job: job,
+                                palette: colors,
+                                onPause: { owner.togglePause(id: job.id) },
+                                onStop: { owner.stop(id: job.id) },
+                                onClear: { owner.remove(id: job.id) },
+                                onRestart: { owner.restart(job: job) },
+                                onShare: { shareJob = job }
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(colors.bg.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .onAppear { owner.open() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .background {
+                owner.leaveForeground()
+            }
+        }
+        .sheet(item: shareSheetItem) { item in
+            ShareSheet(items: owner.shareItems(for: item.job))
+        }
+    }
+
+    private var shareSheetItem: Binding<ShareIdent?> {
+        Binding(
+            get: { shareJob.map { ShareIdent(job: $0) } },
+            set: { shareJob = $0?.job }
+        )
+    }
+
+    private func header(_ colors: Palette) -> some View {
+        HStack(spacing: 10) {
+            Image("Brand")
+                .resizable()
+                .frame(width: 28, height: 28)
+            Text(owner.bannerText.isEmpty ? "torrenter" : owner.bannerText)
+                .font(.system(.title3, design: .monospaced))
+                .foregroundColor(colors.fg)
+                .lineLimit(1)
+            Spacer()
+            HStack(spacing: 6) {
+                ForEach(ThemeId.allCases, id: \.self) { id in
+                    Circle()
+                        .fill(themePalette(id).fg)
+                        .frame(width: 14, height: 14)
+                        .overlay(
+                            Circle().stroke(colors.fg, lineWidth: themeId == id ? 2 : 0)
+                        )
+                        .onTapGesture {
+                            themeId = id
+                            Prefs.saveTheme(id)
+                        }
+                }
+            }
+        }
+    }
+
+    private func modeSwitch(_ colors: Palette) -> some View {
+        HStack(spacing: 0) {
+            modeLabel("MAGNET", on: magnet, colors: colors) { magnet = true }
+            Text(" ⇄ ")
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(colors.dim)
+            modeLabel("HTTP", on: !magnet, colors: colors) { magnet = false }
+        }
+    }
+
+    private func modeLabel(_ title: String, on: Bool, colors: Palette, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .font(.system(.body, design: .monospaced).weight(on ? .bold : .regular))
+            .foregroundColor(on ? colors.fg : colors.dim)
+    }
+
+    private func urlField(_ colors: Palette) -> some View {
+        TextField(
+            "",
+            text: $input,
+            prompt: Text(magnet ? "magnet:?xt=urn:btih:…" : "https://example.com/file.iso")
+                .foregroundColor(colors.dim)
+        )
+        .font(.system(size: 14, design: .monospaced))
+        .foregroundColor(colors.fg)
+        .padding(10)
+        .background(colors.row)
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(colors.dim, lineWidth: 1))
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+    }
+}
+
+private struct ShareIdent: Identifiable {
+    let job: JobView
+    var id: UInt64 { job.id }
+}
+
+private struct JobCard: View {
+    let job: JobView
+    let palette: Palette
+    let onPause: () -> Void
+    let onStop: () -> Void
+    let onClear: () -> Void
+    let onRestart: () -> Void
+    let onShare: () -> Void
+
+    var body: some View {
+        let fraction = jobBarFraction(job)
+        let accent = job.active ? mix(palette.fg, palette.dim, 0.65) : palette.fg
+        let lineColor = job.error != nil ? palette.fail : palette.dim
+        VStack(alignment: .leading, spacing: 6) {
+            Text(job.title.isEmpty ? job.source : job.title)
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundColor(accent)
+                .lineLimit(2)
+            if let fraction {
+                ProgressView(value: Double(fraction))
+                    .tint(accent)
+            } else {
+                ProgressView()
+                    .tint(accent)
+            }
+            Text(jobStatsLine(job))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(lineColor)
+            HStack(spacing: 8) {
+                if job.active {
+                    Button(job.paused ? "resume" : "pause", action: onPause)
+                        .buttonStyle(MonoButton(palette: palette))
+                    Button("stop", action: onStop)
+                        .buttonStyle(MonoButton(palette: palette))
+                } else {
+                    Button("restart", action: onRestart)
+                        .buttonStyle(MonoButton(palette: palette))
+                    Button("clear", action: onClear)
+                        .buttonStyle(MonoButton(palette: palette))
+                    Button("share", action: onShare)
+                        .buttonStyle(MonoButton(palette: palette))
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 4).fill(palette.row))
+    }
+}
+
+private struct MonoButton: ButtonStyle {
+    let palette: Palette
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(.body, design: .monospaced))
+            .foregroundColor(palette.fg)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(palette.rowAlt)
+            .clipShape(RoundedRectangle(cornerRadius: 2))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+private func mix(_ a: Color, _ b: Color, _ towardB: Double) -> Color {
+    let t = min(max(towardB, 0), 1)
+    let aa = UIColor(a)
+    let bb = UIColor(b)
+    var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, ao: CGFloat = 0
+    var br: CGFloat = 0, bg: CGFloat = 0, bb2: CGFloat = 0, bo: CGFloat = 0
+    aa.getRed(&ar, green: &ag, blue: &ab, alpha: &ao)
+    bb.getRed(&br, green: &bg, blue: &bb2, alpha: &bo)
+    return Color(
+        red: ar * (1 - t) + br * t,
+        green: ag * (1 - t) + bg * t,
+        blue: ab * (1 - t) + bb2 * t
+    )
+}

@@ -9,6 +9,7 @@ All notable changes to this project are documented here.
 - Shared download session (`src/session.rs`): queue cap 4, duplicate magnet/URL, persist/restore. Desktop GUI uses it.
 - Optional `ffi` feature: UniFFI `Engine` for Kotlin (and later Swift). Android sideload app under `android/` (Compose, foreground service, `Download/torrenter`, all-files access).
 - Android UI matches the desktop chrome: magnet launcher icon, theme swatches, MAGNET ⇄ HTTP, share/leech glyphs, and the same size/speed/ETA job line.
+- README title row includes Android next to Linux; install steps, dest/jobs layout, and troubleshooting for the sideload APK.
 
 ### Fixed
 

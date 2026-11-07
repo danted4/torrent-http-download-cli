@@ -75,3 +75,46 @@ jobs:
         run: |
           cargo ndk -P 30 -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs \
             build --locked --features ffi --release --lib
+
+  ios-xcframework:
+    name: ios xcframework and swift
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios-xcframework
+      - name: TorrenterFFI.xcframework
+        run: cargo run --locked --features ios-xcframework --bin ios-xcframework
+      - name: Swift tests (iOS Simulator)
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          dest=$(python3 - <<'PY'
+          import json, subprocess, sys
+          data = json.loads(
+              subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"])
+          )
+          for runtime, devices in data.get("devices", {}).items():
+              if "iOS" not in runtime:
+                  continue
+              for device in devices:
+                  if device.get("isAvailable") and "iPhone" in device.get("name", ""):
+                      print(f"platform=iOS Simulator,id={device['udid']}")
+                      sys.exit(0)
+          sys.exit("no available iPhone simulator")
+          PY
+          )
+          xcodebuild \
+            -project torrenter.xcodeproj \
+            -scheme torrenter \
+            -configuration Debug \
+            -destination "$dest" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- \
+            DEVELOPMENT_TEAM= \
+            test

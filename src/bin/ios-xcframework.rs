@@ -25,7 +25,7 @@ fn main() -> Result<()> {
     add.args(["target", "add"]).args(IOS_TARGETS);
     run(&mut add)?;
 
-    run(Command::new("cargo").args(["build", "--features", "ffi"]))?;
+    run(Command::new("cargo").args(["build", "--locked", "--features", "ffi"]))?;
 
     let host_lib = host_cdylib(&root);
     if !host_lib.is_file() {
@@ -37,6 +37,7 @@ fn main() -> Result<()> {
     run(Command::new("cargo")
         .args([
             "run",
+            "--locked",
             "--features",
             "ffi-bindgen",
             "--bin",

@@ -48,9 +48,12 @@ cargo test --locked --all-targets --all-features
 
 # Focused tests
 cargo test --locked --all-features <name_substring>
+
+# iOS (macOS + full Xcode; CI job `ios xcframework and swift`)
+cargo run --locked --features ios-xcframework --bin ios-xcframework
 ```
 
-CI also sets `RUSTFLAGS=-D warnings`. Clippy and tests always use `--all-features` so `src/gui.rs` and `src/icon.rs` compile. On Linux, install the same GUI libs CI does before `--all-features` builds: `libgtk-3-dev libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config`.
+CI also sets `RUSTFLAGS=-D warnings`. Clippy and tests always use `--all-features` so `src/gui.rs` and `src/icon.rs` compile. On Linux, install the same GUI libs CI does before `--all-features` builds: `libgtk-3-dev libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config`. The iOS job rebuilds `TorrenterFFI.xcframework` and runs unsigned Simulator XCTest; it does not sign or install on a device.
 
 Release (do not tag unless the user asks): `git tag vX.Y.Z && git push origin vX.Y.Z` only after the commit is on `main`. Workflow: `.github/workflows/release.yml`. Bump `version` in `Cargo.toml` and add a [CHANGELOG.md](CHANGELOG.md) entry when shipping a release.
 

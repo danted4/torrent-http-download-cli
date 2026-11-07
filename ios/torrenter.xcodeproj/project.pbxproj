@@ -20,7 +20,18 @@
 		BE12C43783DA4C7DA286C99A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9E28A699024C3F953BDBBF /* Theme.swift */; };
 		BF50B220D1B54BBF9B18E5E2 /* Paths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9E729B663043049E053191 /* Paths.swift */; };
 		FD4C4FA28578464EA3B4A0E9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F621EE8589D54D41821785D2 /* Assets.xcassets */; };
+		B2C3D4E5F64789A0B1C2D3E4 /* FormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F64789A0B1C2D3 /* FormatTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C64789A0B1C2D3E4F5A6B7CB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DE9D6F4C11F4410D8B9A4496 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1E1545725872464393EFCDEE;
+			remoteInfo = torrenter;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		04E141E951114AC3869AD5ED /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -38,6 +49,8 @@
 		F621EE8589D54D41821785D2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F7FB19AD9A2240DE9A97EC7C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FC38FBB898334D908ADA6130 /* torrenterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = torrenterApp.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F64789A0B1C2D3 /* FormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatTests.swift; sourceTree = "<group>"; };
+		C3D4E5F64789A0B1C2D3E4F5 /* torrenterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = torrenterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				5F25A0F47711467080D4B956 /* torrenter */,
+				D4E5F64789A0B1C2D3E4F5A6 /* torrenterTests */,
 				4F641A277B6946089CB54536 /* TorrenterFFI.xcframework */,
 				8525D250F1994AA28985DD02 /* Frameworks */,
 				2F7347DC56D24BA9A3A99DAC /* Products */,
@@ -68,6 +82,7 @@
 			isa = PBXGroup;
 			children = (
 				97B7173CB6BA406F8106B0DE /* torrenter.app */,
+				C3D4E5F64789A0B1C2D3E4F5 /* torrenterTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -88,6 +103,14 @@
 				F7FB19AD9A2240DE9A97EC7C /* PrivacyInfo.xcprivacy */,
 			);
 			path = torrenter;
+			sourceTree = "<group>";
+		};
+		D4E5F64789A0B1C2D3E4F5A6 /* torrenterTests */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F64789A0B1C2D3 /* FormatTests.swift */,
+			);
+			path = torrenterTests;
 			sourceTree = "<group>";
 		};
 		8525D250F1994AA28985DD02 /* Frameworks */ = {
@@ -119,6 +142,22 @@
 			productReference = 97B7173CB6BA406F8106B0DE /* torrenter.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E5F64789A0B1C2D3E4F5A6B7 /* torrenterTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A74789A0B1C2D3E4F5A6B7CF /* Build configuration list for PBXNativeTarget "torrenterTests" */;
+			buildPhases = (
+				F64789A0B1C2D3E4F5A6B7C8 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D64789A0B1C2D3E4F5A6B7CC /* PBXTargetDependency */,
+			);
+			name = torrenterTests;
+			productName = torrenterTests;
+			productReference = C3D4E5F64789A0B1C2D3E4F5 /* torrenterTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -131,6 +170,10 @@
 				TargetAttributes = {
 					1E1545725872464393EFCDEE = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					E5F64789A0B1C2D3E4F5A6B7 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 1E1545725872464393EFCDEE;
 					};
 				};
 			};
@@ -148,6 +191,7 @@
 			projectRoot = "";
 			targets = (
 				1E1545725872464393EFCDEE /* torrenter */,
+				E5F64789A0B1C2D3E4F5A6B7 /* torrenterTests */,
 			);
 		};
 /* End PBXProject section */
@@ -180,7 +224,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F64789A0B1C2D3E4F5A6B7C8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B2C3D4E5F64789A0B1C2D3E4 /* FormatTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D64789A0B1C2D3E4F5A6B7CC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1E1545725872464393EFCDEE /* torrenter */;
+			targetProxy = C64789A0B1C2D3E4F5A6B7CB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C75C64989269495EBF087350 /* Debug */ = {
@@ -289,6 +349,54 @@
 			};
 			name = Release;
 		};
+		E64789A0B1C2D3E4F5A6B7CD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 3.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danted4.torrenter.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/torrenter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/torrenter";
+			};
+			name = Debug;
+		};
+		F64789A0B1C2D3E4F5A6B7CE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 3.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danted4.torrenter.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/torrenter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/torrenter";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -297,6 +405,15 @@
 			buildConfigurations = (
 				D22222222222222222222222 /* Debug */,
 				D33333333333333333333333 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A74789A0B1C2D3E4F5A6B7CF /* Build configuration list for PBXNativeTarget "torrenterTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E64789A0B1C2D3E4F5A6B7CD /* Debug */,
+				F64789A0B1C2D3E4F5A6B7CE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

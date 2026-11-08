@@ -42,7 +42,7 @@ torrenter update                 # install the latest matching CLI asset now
 
 While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop.
 
-Downloader with two engines, two desktop fronts, an **Android sideload APK**, and an **iOS sideload app** you build on a Mac. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary, a **native GUI** binary (egui, no HTML/CSS), and `torrenter-android.apk`. There is no iOS IPA on Releases, no App Store listing, and no in-app updater.
+Downloader with two engines, two desktop fronts, an **Android sideload APK**, and an **iOS sideload app** you build on a Mac. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary, a **native GUI** binary (egui), and `torrenter-android.apk`. There is no iOS IPA on Releases, no App Store listing, and no in-app updater.
 
 1. **Magnet / torrent** — BitTorrent via [librqbit](https://github.com/ikatson/rqbit)
 2. **Direct HTTP(S)** — 4-part parallel download with byte-range resume

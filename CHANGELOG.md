@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- CLI `torrenter mcp`: stdio MCP (`rmcp`) that owns the same Session as the desktop GUI (magnet/HTTP, cap 4, leech). Any stdio MCP host can spawn it; stdout is the protocol. Shares `jobs.json` with the GUI — do not run both at once.
+
 ## [3.6.3] - 2026-11-08
 
 ### Changed

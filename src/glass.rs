@@ -1,10 +1,11 @@
-//! OS backdrop blur behind the egui surface. macOS vibrancy, Windows Mica / acrylic.
+//! OS backdrop blur behind the egui surface. macOS vibrancy only.
+//! Windows and Linux stay opaque: DWM Mica/acrylic is not live frost.
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use eframe::egui::Color32;
 use raw_window_handle::HasWindowHandle;
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub fn tint(color: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
 }
@@ -12,24 +13,13 @@ pub fn tint(color: Color32, alpha: u8) -> Color32 {
 pub fn apply(window: &impl HasWindowHandle) {
     #[cfg(target_os = "macos")]
     macos::apply(window);
-    #[cfg(target_os = "windows")]
-    {
-        // Win11 `apply_acrylic` is DWMSBT_TRANSIENTWINDOW (flyout). After
-        // minimize, DWM can restore that as a tiny shadowed pill. Light Mica
-        // is MAINWINDOW (not dark Mica — that made 0% tint a gray sheet).
-        // Win10 has no backdrop type; acrylic SWCA is the fallback.
-        // Do not re-apply on focus; inactive still goes solid.
-        if window_vibrancy::apply_mica(window, Some(false)).is_err() {
-            let _ = window_vibrancy::apply_acrylic(window, Some((12, 12, 12, 90)));
-        }
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = window;
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub fn clear_color() -> [f32; 4] {
     [0.0, 0.0, 0.0, 0.0]
 }

@@ -16,7 +16,6 @@ gui = [
     "dep:rfd",
     "dep:open",
     "dep:winit",
-    "dep:window-vibrancy",
     "dep:raw-window-handle",
     "dep:objc2",
     "dep:objc2-app-kit",
@@ -53,7 +52,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 # eframe 0.31 does not re-export `winit/default`; this unifies CSD (`sctk-adwaita`) while AccessKit stays off.
 winit = { version = "0.30", optional = true }
-window-vibrancy = { version = "0.8", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", optional = true }

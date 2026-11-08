@@ -275,7 +275,7 @@ pub fn run() -> eframe::Result<()> {
         .with_inner_size(WINDOW_INNER)
         .with_min_inner_size(WINDOW_MIN)
         .with_icon(crate::icon::app_icon());
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     let viewport = viewport.with_transparent(true);
     let options = eframe::NativeOptions {
         viewport,
@@ -342,14 +342,14 @@ impl GuiApp {
     }
 
     fn surface(&self, color: Color32) -> Color32 {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         {
             crate::glass::tint(
                 color,
                 update::effective_glass_tint(self.glass_tint, self.viewport_fullscreen),
             )
         }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(target_os = "macos"))]
         {
             color
         }
@@ -598,7 +598,7 @@ impl eframe::App for GuiApp {
         let _ = update::set_glass_tint(self.glass_tint);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         crate::glass::clear_color()
     }
@@ -1159,7 +1159,7 @@ impl GuiApp {
         if !self.settings_open {
             return;
         }
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         let mut persist_tint = false;
         let mut close = false;
         egui::Window::new("settings")
@@ -1203,7 +1203,7 @@ impl GuiApp {
                     });
                 });
                 ui.add_space(10.0);
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                #[cfg(target_os = "macos")]
                 {
                     let locked = self.viewport_fullscreen;
                     let shown = update::effective_glass_tint(self.glass_tint, locked);
@@ -1230,12 +1230,8 @@ impl GuiApp {
                     }
                 }
             });
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         if persist_tint || close {
-            let _ = update::set_glass_tint(self.glass_tint);
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        if close {
             let _ = update::set_glass_tint(self.glass_tint);
         }
         if close {
@@ -1500,7 +1496,7 @@ fn viewport_is_fullscreen(ctx: &egui::Context) -> bool {
     ctx.input(|input| input.viewport().fullscreen == Some(true))
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn tint_slider(ui: &mut egui::Ui, value: &mut u8, palette: Theme, locked: bool) -> egui::Response {
     let min = update::GLASS_TINT_MIN;
     let max = update::GLASS_TINT_MAX;
@@ -1843,7 +1839,7 @@ fn glass_text_wash() -> Color32 {
 }
 
 fn paint_brush_stroke(painter: &egui::Painter, rect: egui::Rect) {
-    if !cfg!(any(target_os = "macos", target_os = "windows")) {
+    if !cfg!(target_os = "macos") {
         return;
     }
     if rect.width() < 0.5 || rect.height() < 0.5 {
@@ -1896,7 +1892,7 @@ fn layout_glass_text(
     sense: Sense,
     wrap: bool,
 ) -> egui::Response {
-    let pad = if cfg!(any(target_os = "macos", target_os = "windows")) {
+    let pad = if cfg!(target_os = "macos") {
         egui::vec2(6.0, 4.0)
     } else {
         egui::vec2(0.0, 0.0)
@@ -1938,7 +1934,7 @@ fn glass_pair(
         right_color,
     );
     let gap = 7.0_f32;
-    let pad = if cfg!(any(target_os = "macos", target_os = "windows")) {
+    let pad = if cfg!(target_os = "macos") {
         egui::vec2(8.0, 4.0)
     } else {
         egui::vec2(0.0, 0.0)

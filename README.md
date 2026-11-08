@@ -21,7 +21,7 @@
       <img src="docs/android-3.6.1.jpg" alt="torrenter android" height="300">
    </td>
    <td>
-      <img src="docs/ios-3.7.0.jpg" alt="torrenter ios" height="300">
+      <img src="docs/ios-3.6.2.jpg" alt="torrenter ios" height="300">
    </td>
    <td>
       <img src="docs/cli.jpg" alt="torrenter cli" height="300">

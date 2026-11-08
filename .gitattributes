@@ -1,0 +1,7 @@
+# UniFFI glue is generated; Linguist would otherwise count the iOS
+# header as C and the Kotlin bindings as Kotlin.
+ios/generated/** linguist-generated=true
+android/app/src/main/java/uniffi/** linguist-generated=true
+
+# crates.io path patch (librqbit-dualstack-sockets).
+patches/** linguist-vendored=true

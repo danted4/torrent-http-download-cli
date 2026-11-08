@@ -77,15 +77,17 @@ struct ContentView: View {
     }
 
     private func header(_ colors: Palette) -> some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Image("Brand")
                 .resizable()
                 .frame(width: 28, height: 28)
             Text(owner.bannerText.isEmpty ? "torrenter" : owner.bannerText)
                 .font(.system(.title3, design: .monospaced))
                 .foregroundColor(colors.fg)
-                .lineLimit(1)
-            Spacer()
+                .multilineTextAlignment(.leading)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 6) {
                 ForEach(ThemeId.allCases, id: \.self) { id in
                     Circle()

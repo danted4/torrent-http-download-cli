@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- iOS header wraps `danted4/torrenter vX.Y.Z` onto a second line instead of truncating with an ellipsis (same as Android).
+
 ## [3.7.0] - 2026-11-07
 
 ### Added

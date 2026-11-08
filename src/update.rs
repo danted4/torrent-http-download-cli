@@ -805,6 +805,20 @@ pub fn set_glass_tint(value: u8) -> Result<AppConfig> {
     Ok(config)
 }
 
+/// Windows has no frost. Ignore a leftover slider value and use 100%.
+pub fn windows_glass_tint(_saved: u8) -> u8 {
+    glass_tint_from_percent(100)
+}
+
+/// Rewrite `config.json` when a Windows install still has a pre-opaque tint.
+pub fn snap_windows_glass_tint(saved: u8) -> u8 {
+    let max = windows_glass_tint(saved);
+    if normalize_glass_tint(saved) != max {
+        let _ = set_glass_tint(max);
+    }
+    max
+}
+
 pub fn set_download_dir(path: impl AsRef<Path>) -> Result<AppConfig> {
     let stored = crate::paths::persistable_dir(path)?;
     let mut config = load_config();
@@ -925,6 +939,15 @@ mod tests {
         );
         assert_eq!(effective_glass_tint(saved, false), saved);
         assert_eq!(saved, GLASS_TINT_DEFAULT);
+    }
+
+    #[test]
+    fn windows_tint_snaps_to_max_regardless_of_saved() {
+        assert_eq!(windows_glass_tint(0), GLASS_TINT_MAX);
+        assert_eq!(windows_glass_tint(40), GLASS_TINT_MAX);
+        assert_eq!(windows_glass_tint(GLASS_TINT_DEFAULT), GLASS_TINT_MAX);
+        assert_eq!(windows_glass_tint(GLASS_TINT_MAX), GLASS_TINT_MAX);
+        assert_eq!(glass_tint_percent(windows_glass_tint(90)), 100);
     }
 
     #[test]

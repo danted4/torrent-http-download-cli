@@ -301,7 +301,17 @@ impl GuiApp {
         let auto_update = config.auto_update;
         let seed = config.seed;
         let theme = ThemeId::from_config(&config.theme);
-        let glass_tint = update::normalize_glass_tint(config.glass_tint);
+        let glass_tint = {
+            let loaded = update::normalize_glass_tint(config.glass_tint);
+            #[cfg(target_os = "windows")]
+            {
+                update::snap_windows_glass_tint(loaded)
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                loaded
+            }
+        };
         let dest = paths::effective_dir(&config);
         let launch_error = paths::ensure_dir(&dest)
             .err()

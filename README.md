@@ -38,6 +38,7 @@ torrenter magnet "magnet:?xt=urn:btih:…" --dir /tmp/out   # one-shot, not save
 torrenter --auto-update          # persist: check GitHub Releases on startup (TTY only)
 torrenter --no-auto-update
 torrenter update                 # install the latest matching CLI asset now
+torrenter mcp                    # stdio MCP (any host that can spawn a command)
 ```
 
 While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop.
@@ -298,7 +299,21 @@ HTTP resume keeps `{sha256(url)[0..16]}.part-N` plus a small JSON manifest under
 - Progress format: `BAR_TEMPLATE` in `src/progress.rs`
 - HTTP and updater timeouts: 20s connect, 60s between reads
 - Auto-update, magnet seed, GUI `theme`, GUI `glass_tint` (macOS only), and optional `download_dir`: `~/.config/torrenter/config.json` (macOS: `~/Library/Application Support/torrenter/config.json`, Windows: `%APPDATA%\torrenter\config.json`). `seed` defaults to on. `theme` is `phosphor`, `amber`, `ice`, `scarlet`, or `violet` (default phosphor). On macOS, `glass_tint` is 40–210 (default 60% of that range) and tints the frosted window; native fullscreen locks the wash at 100% without writing that override. Labels and the settings cog keep a light brush-stroke wash behind the glyphs so 0% tint stays readable on a light wallpaper. Windows and Linux stay opaque (no tint slider). On Windows, an existing `glass_tint` in config is rewritten to 100%. Missing `download_dir` keeps following the live OS Downloads path. Auto-update stays on the GUI header; theme sits in the cog (tint too, on macOS).
-- GUI job list: `jobs.json` in that same folder. Each row keeps its own dest and share/leech. Corrupt files are moved to `jobs.json.bak`.
+- GUI job list: `jobs.json` in that same folder. Each row keeps its own dest and share/leech. Corrupt files are moved to `jobs.json.bak`. `torrenter mcp` uses that same file (leech-only, dest read-only). Hydrate forces `seed` off and rewrites the file so a GUI share-mode torrent does not start uploading. Do not run the GUI and `torrenter mcp` at the same time.
+- MCP: any client that can **spawn a local command** over stdio (Cursor, Claude Desktop, Cline, Pi, and others). Not an HTTP `/mcp` URL. Put `torrenter` on `PATH`, then:
+
+```json
+{
+  "mcpServers": {
+    "torrenter": {
+      "command": "torrenter",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Stdout is the protocol; logs go to stderr. There is no install token and no extra binary.
 - Android: dest is always public `Download/torrenter`. Job list is `jobs.json` under the app files dir. Theme and seed are SharedPreferences (`theme`, `seed`). No `config.json`, no glass tint, no updater.
 - iOS: dest is always `Documents/torrenter` (Files: On My iPhone / torrenter). Job list is `jobs.json` under Application Support. Theme is UserDefaults (`theme`). Leech only, no seed preference, no `config.json`, no glass tint, no updater.
 

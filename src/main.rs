@@ -11,6 +11,9 @@ use torrenter::torrent::start_download;
 use torrenter::update::{self, load_config};
 use torrenter::validate::{is_valid_download_url, is_valid_magnet_url};
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod mcp;
+
 #[derive(Parser)]
 #[command(
     name = "torrenter",
@@ -50,6 +53,8 @@ enum Command {
     },
     /// Check GitHub and replace this binary if a newer release exists
     Update,
+    /// Speak MCP over stdio (stdout is the protocol; logs on stderr)
+    Mcp,
 }
 
 #[tokio::main]
@@ -71,6 +76,15 @@ async fn main() -> Result<()> {
         eprintln!("auto-update: off");
     }
 
+    if matches!(cli.command, Some(Command::Mcp)) {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            return mcp::run().await;
+        }
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        anyhow::bail!("mcp is not available on this target");
+    }
+
     if matches!(cli.command, Some(Command::Update)) {
         println!("{}", banner());
         return run_update().await;
@@ -83,7 +97,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Some(Command::Http { url, dir }) => run_http(url.trim(), dir).await,
         Some(Command::Magnet { uri, dir }) => run_magnet(uri.trim(), dir).await,
-        Some(Command::Update) => unreachable!(),
+        Some(Command::Update | Command::Mcp) => unreachable!(),
         None => prompt_user().await,
     }
 }
@@ -308,5 +322,11 @@ mod tests {
     fn default_is_interactive() {
         let cli = Cli::try_parse_from(["torrenter"]).unwrap();
         assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn parses_mcp_subcommand() {
+        let cli = Cli::try_parse_from(["torrenter", "mcp"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Mcp)));
     }
 }

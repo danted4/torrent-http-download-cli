@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- CLI `torrenter mcp`: stdio MCP (`rmcp`) that owns the same Session as the desktop GUI (magnet/HTTP, cap 4, leech). Any stdio MCP host can spawn it; stdout is the protocol. Shares `jobs.json` with the GUI — do not run both at once.
+
+### Fixed
+
+- MCP restore strips share-mode `seed` from GUI `jobs.json` before any engine start, so a host that launches `torrenter mcp` does not upload.
+- `restart` and `remove` mark the previous job snapshot stopped so the engine cannot keep writing after the row is replaced or dropped.
+
+### Changed
+
+- `rmcp` is a desktop CLI dependency (`src/mcp.rs` on the `torrenter` binary), not part of the UniFFI Android/iOS natives.
+
 ## [3.6.3] - 2026-11-08
 
 ### Changed

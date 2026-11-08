@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Windows desktop GUI is opaque like Linux: no tint slider and no Mica/acrylic. Frost and the tint control stay macOS-only (DWM is not live glass). A leftover Windows `glass_tint` (including a slider value already saved) is rewritten to 100%.
+
 ## [3.6.2] - 2026-11-08
 
 ### Added

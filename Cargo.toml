@@ -1,8 +1,8 @@
 [package]
 name = "torrenter"
-version = "3.6.3"
+version = "3.7.0"
 edition = "2021"
-description = "CLI and native GUI: magnet/torrent and parallel multipart HTTP(S) with byte-range resume."
+description = "CLI, native GUI, and stdio MCP: magnet/torrent and parallel multipart HTTP(S) with byte-range resume."
 license = "MIT"
 repository = "https://github.com/danted4/torrenter"
 readme = "README.md"

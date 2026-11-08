@@ -1,4 +1,4 @@
-# torrenter &nbsp;  &nbsp; <a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="28" height="28" align="absmiddle"></a> <a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="28" height="28" align="absmiddle"></a> <a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="28" height="28" align="absmiddle"></a> <a href="#android"><img src="docs/os-android.svg" alt="Android" width="28" height="28" align="absmiddle"></a> <a href="#ios"><img src="docs/os-ios.svg" alt="iOS" width="28" height="28" align="absmiddle"></a> &nbsp;  &nbsp;
+# torrenter &nbsp;  &nbsp; <a href="#windows"><img src="docs/os-windows.svg" alt="Windows" width="28" height="28" align="absmiddle"></a> <a href="#macos"><img src="docs/os-macos.svg" alt="macOS" width="28" height="28" align="absmiddle"></a> <a href="#linux"><img src="docs/os-linux.svg" alt="Linux" width="28" height="28" align="absmiddle"></a> <a href="#android"><img src="docs/os-android.svg" alt="Android" width="28" height="28" align="absmiddle"></a> <a href="#ios"><img src="docs/os-ios.svg" alt="iOS" width="28" height="28" align="absmiddle"></a> <a href="#mcp"><img src="docs/os-mcp.svg" alt="MCP" width="28" height="28" align="absmiddle"></a> &nbsp;  &nbsp;
 
 **torrenter gui**
 
@@ -43,7 +43,7 @@ torrenter mcp                    # stdio MCP (any host that can spawn a command)
 
 While a download runs, type `1` then Enter to pause/resume, or `2` then Enter to stop.
 
-Downloader with two engines, two desktop fronts, an **Android sideload APK**, and an **iOS sideload app** you build on a Mac. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary, a **native GUI** binary (egui), and `torrenter-android.apk`. There is no iOS IPA on Releases, no App Store listing, and no in-app updater.
+Downloader with two engines, two desktop fronts, an **Android sideload APK**, an **iOS sideload app** you build on a Mac, and **stdio MCP**. Each [GitHub Release](https://github.com/danted4/torrenter/releases) ships a **CLI** binary, a **native GUI** binary (egui), and `torrenter-android.apk`. There is no iOS IPA on Releases, no App Store listing, and no in-app updater.
 
 1. **Magnet / torrent** — BitTorrent via [librqbit](https://github.com/ikatson/rqbit)
 2. **Direct HTTP(S)** — 4-part parallel download with byte-range resume
@@ -201,6 +201,25 @@ Downloads: **Files → Browse → On My iPhone → torrenter**. If On My iPhone 
 
 Leaving the app **stops** live jobs (no Android-style background service). Reopen and tap **restart**. `jobs.json` is in Application Support (not in Files). Theme is UserDefaults. Incomplete work resumes from dest / `.resume/`. Local network permission may appear for magnet/DHT.
 
+## MCP
+
+`torrenter mcp` speaks **stdio** MCP (`rmcp`). Any host that can spawn a local command can use it (Cursor, Claude Desktop, Cline, Pi, and others). Not an HTTP `/mcp` URL. Leech-only; same `jobs.json` as the GUI — do not run both at once. Hydrate forces `seed` off so a GUI share-mode torrent does not start uploading.
+
+Put `torrenter` on `PATH`, then:
+
+```json
+{
+  "mcpServers": {
+    "torrenter": {
+      "command": "torrenter",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Stdout is the protocol; logs go to stderr. There is no install token and no extra binary.
+
 ## Two download modes
 
 | | **Magnet / torrent** | **Direct HTTP(S)** |
@@ -299,21 +318,7 @@ HTTP resume keeps `{sha256(url)[0..16]}.part-N` plus a small JSON manifest under
 - Progress format: `BAR_TEMPLATE` in `src/progress.rs`
 - HTTP and updater timeouts: 20s connect, 60s between reads
 - Auto-update, magnet seed, GUI `theme`, GUI `glass_tint` (macOS only), and optional `download_dir`: `~/.config/torrenter/config.json` (macOS: `~/Library/Application Support/torrenter/config.json`, Windows: `%APPDATA%\torrenter\config.json`). `seed` defaults to on. `theme` is `phosphor`, `amber`, `ice`, `scarlet`, or `violet` (default phosphor). On macOS, `glass_tint` is 40–210 (default 60% of that range) and tints the frosted window; native fullscreen locks the wash at 100% without writing that override. Labels and the settings cog keep a light brush-stroke wash behind the glyphs so 0% tint stays readable on a light wallpaper. Windows and Linux stay opaque (no tint slider). On Windows, an existing `glass_tint` in config is rewritten to 100%. Missing `download_dir` keeps following the live OS Downloads path. Auto-update stays on the GUI header; theme sits in the cog (tint too, on macOS).
-- GUI job list: `jobs.json` in that same folder. Each row keeps its own dest and share/leech. Corrupt files are moved to `jobs.json.bak`. `torrenter mcp` uses that same file (leech-only, dest read-only). Hydrate forces `seed` off and rewrites the file so a GUI share-mode torrent does not start uploading. Do not run the GUI and `torrenter mcp` at the same time.
-- MCP: any client that can **spawn a local command** over stdio (Cursor, Claude Desktop, Cline, Pi, and others). Not an HTTP `/mcp` URL. Put `torrenter` on `PATH`, then:
-
-```json
-{
-  "mcpServers": {
-    "torrenter": {
-      "command": "torrenter",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Stdout is the protocol; logs go to stderr. There is no install token and no extra binary.
+- GUI job list: `jobs.json` in that same folder. Each row keeps its own dest and share/leech. Corrupt files are moved to `jobs.json.bak`. `torrenter mcp` uses that same file — see [MCP](#mcp).
 - Android: dest is always public `Download/torrenter`. Job list is `jobs.json` under the app files dir. Theme and seed are SharedPreferences (`theme`, `seed`). No `config.json`, no glass tint, no updater.
 - iOS: dest is always `Documents/torrenter` (Files: On My iPhone / torrenter). Job list is `jobs.json` under Application Support. Theme is UserDefaults (`theme`). Leech only, no seed preference, no `config.json`, no glass tint, no updater.
 

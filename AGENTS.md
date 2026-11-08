@@ -26,7 +26,7 @@ Both fronts call the same engines in `src/lib.rs`:
 - **Opt-in updater** — `src/update.rs` from GitHub Releases + `SHA256SUMS`. CLI and GUI only replace their own asset family (`torrenter-*` vs `torrenter-gui-*`).
 - **Validation / identity** — `src/validate.rs`, `src/identity.rs` (`danted4/torrenter vX.Y.Z` from `CARGO_PKG_VERSION`).
 
-Product rules (magnet vs HTTP, resume, GUI queue of 4, TTY-gated startup update, legal-use note) are specified in [README.md](README.md) sections **Two download modes**, **Updates**, **How it works**, **Configuration**, and **Responsible use**. CLI subcommands sit under the CLI screenshot at the top of the README. Do not invent extra modes or accept `.torrent` files.
+Product rules (magnet vs HTTP, resume, GUI queue of 4, TTY-gated startup update, legal-use note) are specified in [README.md](README.md) sections **Two download modes**, **Updates**, **How it works**, **Configuration**, **MCP**, and **Responsible use**. CLI subcommands sit under the CLI screenshot at the top of the README. The title row includes OS icons plus MCP. Do not invent extra modes or accept `.torrent` files.
 
 ## Build and test commands
 

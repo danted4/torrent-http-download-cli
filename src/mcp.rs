@@ -14,12 +14,12 @@ use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
-use crate::identity::{self, VERSION};
-use crate::jobs::JobKind;
-use crate::paths;
-use crate::session::{self, Job, Session, SessionEvent};
-use crate::update::load_config;
-use crate::validate::{is_valid_download_url, is_valid_magnet_url};
+use torrenter::identity::{self, VERSION};
+use torrenter::jobs::JobKind;
+use torrenter::paths;
+use torrenter::session::{self, Job, Session, SessionEvent};
+use torrenter::update::load_config;
+use torrenter::validate::{is_valid_download_url, is_valid_magnet_url};
 
 const TICK: Duration = Duration::from_millis(200);
 
@@ -154,8 +154,8 @@ impl Mcp {
         if let Err(error) = paths::ensure_dir(&dest) {
             eprintln!("download folder: {error:#}");
         }
-        let jobs_path = crate::jobs::jobs_path().unwrap_or_else(|_| dest.join("jobs.json"));
-        let session = Session::open(dest, jobs_path, false);
+        let jobs_path = torrenter::jobs::jobs_path().unwrap_or_else(|_| dest.join("jobs.json"));
+        let session = Session::open_leech(dest, jobs_path);
         let notices = Arc::new(Mutex::new(Vec::new()));
         match session.hydrate() {
             session::Hydrate::Empty | session::Hydrate::Loaded => {}

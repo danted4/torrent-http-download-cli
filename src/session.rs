@@ -121,6 +121,7 @@ struct Inner {
     dest: PathBuf,
     jobs_path: PathBuf,
     seed: bool,
+    leech_only: bool,
     jobs: Vec<Job>,
     next_id: u64,
     persist_at: Instant,
@@ -135,6 +136,15 @@ pub struct Session {
 
 impl Session {
     pub fn open(dest: PathBuf, jobs_path: PathBuf, seed: bool) -> Self {
+        Self::open_inner(dest, jobs_path, seed, false)
+    }
+
+    /// MCP: never upload, including jobs restored from a GUI `jobs.json`.
+    pub fn open_leech(dest: PathBuf, jobs_path: PathBuf) -> Self {
+        Self::open_inner(dest, jobs_path, false, true)
+    }
+
+    fn open_inner(dest: PathBuf, jobs_path: PathBuf, seed: bool, leech_only: bool) -> Self {
         let (engine_tx, engine_rx) = mpsc::channel();
         let (event_tx, event_rx) = mpsc::channel();
         thread::spawn(move || engine_loop(engine_rx, event_tx));
@@ -142,7 +152,8 @@ impl Session {
             inner: Arc::new(Mutex::new(Inner {
                 dest,
                 jobs_path,
-                seed,
+                seed: seed && !leech_only,
+                leech_only,
                 jobs: Vec::new(),
                 next_id: 1,
                 persist_at: Instant::now(),
@@ -166,7 +177,12 @@ impl Session {
     }
 
     pub fn set_seed(&self, seed: bool) {
-        mutex_lock(&self.inner).seed = seed;
+        let mut inner = mutex_lock(&self.inner);
+        if inner.leech_only {
+            inner.seed = false;
+            return;
+        }
+        inner.seed = seed;
     }
 
     pub fn hydrate(&self) -> Hydrate {
@@ -175,6 +191,7 @@ impl Session {
             LoadJobs::Empty => Hydrate::Empty,
             LoadJobs::Corrupt(error) => Hydrate::Corrupt(error),
             LoadJobs::Loaded(records) => {
+                let leech_only = inner.leech_only;
                 let mut probes = Vec::new();
                 for record in records {
                     let Some(kind) = record.kind_id() else {
@@ -206,11 +223,16 @@ impl Session {
                         last_check: Instant::now(),
                         speed: 0.0,
                         up_speed: 0.0,
-                        seed: record.seed,
+                        seed: record.seed && !leech_only,
                         dest: record.dest,
                     });
                 }
-                inner.saved_fingerprint = persist_fingerprint(&inner.jobs);
+                if inner.leech_only {
+                    inner.saved_fingerprint.clear();
+                    persist_inner(&mut inner, true);
+                } else {
+                    inner.saved_fingerprint = persist_fingerprint(&inner.jobs);
+                }
                 drop(inner);
                 if !probes.is_empty() {
                     let _ = self.engine.send(EngineCmd::Probe(probes));
@@ -278,6 +300,7 @@ impl Session {
                 RestoreAction::Idle => {}
             }
         }
+        let leech_only = inner.leech_only;
         let cmds: Vec<_> = starts
             .into_iter()
             .filter_map(|index| {
@@ -287,7 +310,7 @@ impl Session {
                     kind: job.kind,
                     source: job.source.clone(),
                     snapshot: Arc::clone(&job.snapshot),
-                    seed: job.seed,
+                    seed: job.seed && !leech_only,
                     dest: job.dest.clone(),
                 })
             })
@@ -332,7 +355,7 @@ impl Session {
         }
         let id = inner.next_id;
         inner.next_id += 1;
-        let seed = kind == JobKind::Magnet && inner.seed;
+        let seed = kind == JobKind::Magnet && inner.seed && !inner.leech_only;
         let dest = inner.dest.clone();
         let job = Job {
             id,
@@ -379,6 +402,7 @@ impl Session {
             return Err(note);
         }
         let title = inner.jobs[index].snapshot.title();
+        inner.jobs[index].snapshot.mark_stopped();
         let snapshot = Arc::new(JobSnapshot::default());
         snapshot.set_status("queued");
         if !title.is_empty() {
@@ -386,7 +410,7 @@ impl Session {
         }
         let new_id = inner.next_id;
         inner.next_id += 1;
-        let seed = kind == JobKind::Magnet && seed;
+        let seed = kind == JobKind::Magnet && seed && !inner.leech_only;
         let _ = self.engine.send(EngineCmd::Download {
             id: new_id,
             kind,
@@ -434,6 +458,7 @@ impl Session {
     pub fn remove(&self, id: u64) {
         let mut inner = mutex_lock(&self.inner);
         if let Some(index) = inner.jobs.iter().position(|job| job.id == id) {
+            inner.jobs[index].snapshot.mark_stopped();
             inner.jobs.remove(index);
             persist_inner(&mut inner, true);
         }
@@ -729,5 +754,93 @@ mod tests {
         assert!(session
             .queue(JobKind::Magnet, "magnet:?xt=urn:btih:zz")
             .is_err());
+    }
+
+    #[test]
+    fn leech_hydrate_strips_share_seed_and_persists() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("dl");
+        std::fs::create_dir_all(&dest).unwrap();
+        let jobs_path = dir.path().join("jobs.json");
+        let mut job = sample_job(
+            "Sintel",
+            "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10",
+            dest.to_str().unwrap(),
+        );
+        job.kind = JobKind::Magnet;
+        job.seed = true;
+        job.snapshot.set_status("seeding");
+        let mut record = persist_record(&job);
+        record.id = 3;
+        jobs::save_jobs_to(&jobs_path, &[record]).unwrap();
+        let session = Session::open_leech(dest, jobs_path.clone());
+        match session.hydrate() {
+            Hydrate::Loaded => {}
+            Hydrate::Empty | Hydrate::Corrupt(_) => panic!("expected loaded"),
+        }
+        let jobs = session.jobs();
+        assert_eq!(jobs.len(), 1);
+        assert!(!jobs[0].seed, "leech session must not keep GUI share seed");
+        match jobs::load_jobs_from(&jobs_path) {
+            jobs::LoadJobs::Loaded(records) => {
+                assert_eq!(records.len(), 1);
+                assert!(!records[0].seed);
+            }
+            jobs::LoadJobs::Empty | jobs::LoadJobs::Corrupt(_) => panic!("expected rewritten jobs"),
+        }
+    }
+
+    #[test]
+    fn restart_marks_previous_snapshot_stopped() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("dl");
+        std::fs::create_dir_all(&dest).unwrap();
+        let jobs_path = dir.path().join("jobs.json");
+        let job = sample_job(
+            "Sintel",
+            "https://127.0.0.1:1/sintel.mkv",
+            dest.to_str().unwrap(),
+        );
+        job.snapshot.set_status("queued");
+        let mut record = persist_record(&job);
+        record.id = 1;
+        jobs::save_jobs_to(&jobs_path, &[record]).unwrap();
+        let session = Session::open(dest.clone(), jobs_path, false);
+        match session.hydrate() {
+            Hydrate::Loaded => {}
+            Hydrate::Empty | Hydrate::Corrupt(_) => panic!("expected loaded"),
+        }
+        let old = Arc::clone(&session.jobs()[0].snapshot);
+        assert!(old.is_active());
+        session.restart(1, false, dest).expect("restart");
+        assert!(old.is_stopped());
+        assert_eq!(session.jobs()[0].id, 2);
+        assert!(session.jobs()[0].snapshot.is_active());
+    }
+
+    #[test]
+    fn remove_marks_snapshot_stopped() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("dl");
+        std::fs::create_dir_all(&dest).unwrap();
+        let jobs_path = dir.path().join("jobs.json");
+        let job = sample_job(
+            "Sintel",
+            "https://127.0.0.1:1/sintel.mkv",
+            dest.to_str().unwrap(),
+        );
+        job.snapshot.set_status("queued");
+        let mut record = persist_record(&job);
+        record.id = 9;
+        jobs::save_jobs_to(&jobs_path, &[record]).unwrap();
+        let session = Session::open(dest, jobs_path, false);
+        match session.hydrate() {
+            Hydrate::Loaded => {}
+            Hydrate::Empty | Hydrate::Corrupt(_) => panic!("expected loaded"),
+        }
+        let snap = Arc::clone(&session.jobs()[0].snapshot);
+        session.remove(9);
+        assert!(session.jobs().is_empty());
+        assert!(snap.is_stopped());
     }
 }

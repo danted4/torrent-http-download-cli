@@ -11,6 +11,9 @@ use torrenter::torrent::start_download;
 use torrenter::update::{self, load_config};
 use torrenter::validate::{is_valid_download_url, is_valid_magnet_url};
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod mcp;
+
 #[derive(Parser)]
 #[command(
     name = "torrenter",
@@ -74,7 +77,12 @@ async fn main() -> Result<()> {
     }
 
     if matches!(cli.command, Some(Command::Mcp)) {
-        return torrenter::mcp::run().await;
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            return mcp::run().await;
+        }
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        anyhow::bail!("mcp is not available on this target");
     }
 
     if matches!(cli.command, Some(Command::Update)) {

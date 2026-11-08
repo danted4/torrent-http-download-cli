@@ -1,7 +1,6 @@
 pub mod http;
 pub mod identity;
 pub mod jobs;
-pub mod mcp;
 pub mod paths;
 pub mod progress;
 pub mod session;

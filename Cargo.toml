@@ -52,6 +52,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 # eframe 0.31 does not re-export `winit/default`; this unifies CSD (`sctk-adwaita`) while AccessKit stays off.
 winit = { version = "0.30", optional = true }
+
+# CLI `torrenter mcp` only. Keep off Android/iOS UniFFI natives.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # 3.x needs rustc 1.88; keep 2.2 so MSRV 1.85 still builds.
 rmcp = { version = "2.2.0", default-features = false, features = ["macros", "server", "transport-io"] }
 

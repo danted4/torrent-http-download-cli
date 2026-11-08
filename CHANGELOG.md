@@ -4,11 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-### Fixed
-
-- iOS header wraps `danted4/torrenter vX.Y.Z` onto a second line instead of truncating with an ellipsis (same as Android).
-
-## [3.7.0] - 2026-11-07
+## [3.7.0] - 2026-11-08
 
 ### Added
 
@@ -16,6 +12,10 @@ All notable changes to this project are documented here.
 - Host helper `cargo run --features ios-xcframework --bin ios-xcframework` writes Swift bindings and a device+simulator `TorrenterFFI.xcframework`.
 - Patch `librqbit-dualstack-sockets` so iOS bind-to-interface matches macOS (`IP_BOUND_IF`) instead of Linux `SO_BINDTODEVICE`. Windows `new_from_name` prefixes the unused interface name so `RUSTFLAGS=-D warnings` still compiles.
 - CI on macOS runs `ios-xcframework` then unsigned iOS Simulator XCTest (`FormatTests`, same size/speed/ETA strings as `src/progress.rs`).
+
+### Fixed
+
+- iOS header wraps `danted4/torrenter vX.Y.Z` onto a second line instead of truncating with an ellipsis (same as Android).
 
 ## [3.6.1] - 2026-11-07
 

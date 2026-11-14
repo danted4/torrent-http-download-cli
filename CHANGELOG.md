@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-11-14
+
 ### Added
 
 - iOS **keep alive** switch (off by default): a silent, mixable audio loop keeps the app running in the background until every job finishes. Sideload-only; declares the `audio` background mode.

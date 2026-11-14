@@ -19,11 +19,11 @@ final class BackgroundPlanTests: XCTestCase {
     }
 
     func testGraceDelayLeavesMarginAndCaps() {
-        XCTAssertEqual(BackgroundPlan.graceDelay(remaining: 30), 25)
+        XCTAssertEqual(BackgroundPlan.graceDelay(remaining: 30), 20)
         XCTAssertEqual(BackgroundPlan.graceDelay(remaining: 12), 7)
         XCTAssertEqual(BackgroundPlan.graceDelay(remaining: 3), 0)
-        XCTAssertEqual(BackgroundPlan.graceDelay(remaining: .greatestFiniteMagnitude), 25)
-        XCTAssertEqual(BackgroundPlan.graceDelay(remaining: .infinity), 25)
+        XCTAssertEqual(BackgroundPlan.graceDelay(remaining: .greatestFiniteMagnitude), 20)
+        XCTAssertEqual(BackgroundPlan.graceDelay(remaining: .infinity), 20)
     }
 
     func testParksRunningAndQueuedButNotPausedOrIdle() {

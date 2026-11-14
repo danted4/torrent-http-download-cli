@@ -10,7 +10,7 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- iOS no longer stops jobs the instant you leave: downloads continue for the ~25 s background grace window, then live jobs are parked and restart on their own when the app is reopened (including after iOS kills it). Jobs you paused stay stopped.
+- iOS no longer stops jobs the instant you leave: downloads continue for the ~20 s background grace window, then live jobs are parked and restart on their own when the app is reopened (including after iOS kills it). Jobs you paused stay stopped.
 
 ### Fixed
 

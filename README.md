@@ -176,7 +176,7 @@ No Rust/Cargo is needed on the phone. Building the APK is in the [Development](#
 
 ## iOS
 
-Sideload from this tree onto **your** iPhone — not the App Store, not a GitHub IPA. min **iOS 16**, arm64 device + simulator slice. Same engines and chrome as Android (magnet icon, phosphor / amber / ice / scarlet / violet, MAGNET ⇄ HTTP, verifying then downloading, queue of four) with three product cuts: **leech only** (no share toggle), **no background service** (Home keeps downloading for the ~25 s iOS grace window, then parks live jobs; reopening restarts them, unless **keep alive** is on), dest is **On My iPhone → torrenter** (`Documents/torrenter`). There is **no** in-app updater.
+Sideload from this tree onto **your** iPhone — not the App Store, not a GitHub IPA. min **iOS 16**, arm64 device + simulator slice. Same engines and chrome as Android (magnet icon, phosphor / amber / ice / scarlet / violet, MAGNET ⇄ HTTP, verifying then downloading, queue of four) with three product cuts: **leech only** (no share toggle), **no background service** (Home keeps downloading for the ~20 s iOS grace window, then parks live jobs; reopening restarts them, unless **keep alive** is on), dest is **On My iPhone → torrenter** (`Documents/torrenter`). There is **no** in-app updater.
 
 You need a **Mac**, **full Xcode** from the App Store (Command Line Tools are not enough), Rust 1.85+, and the iPhone on USB. A free Apple ID can sign to that device (the cert expires about every 7 days). Linux and Windows cannot produce an installable iOS app.
 
@@ -199,7 +199,7 @@ You need a **Mac**, **full Xcode** from the App Store (Command Line Tools are no
 
 Downloads: **Files → Browse → On My iPhone → torrenter**. If On My iPhone is missing, enable it under Browse locations. Idle job rows have **share** for Open In / VLC.
 
-Leaving the app keeps live jobs running for up to ~25 s (the iOS background grace window), then **parks** them: they stop and the app remembers which ones were running. Reopening the app (even after iOS kills it) **restarts** parked jobs on its own; jobs you paused stay stopped. Turn on **keep alive** (switch under the URL field) to keep downloading in the background: a silent audio loop that mixes with other apps keeps iOS from suspending torrenter until every job is done, at a battery cost. It is a sideload-only trick (the app declares the `audio` background mode) and is off by default. A phone call or another app grabbing audio falls back to the grace window. `jobs.json` is in Application Support (not in Files). Theme is UserDefaults. Incomplete work resumes from dest / `.resume/`. Local network permission may appear for magnet/DHT.
+Leaving the app keeps live jobs running for up to ~20 s (the iOS background grace window), then **parks** them: they stop and the app remembers which ones were running. Reopening the app (even after iOS kills it) **restarts** parked jobs on its own; jobs you paused stay stopped. Turn on **keep alive** (switch under the URL field) to keep downloading in the background: a silent audio loop that mixes with other apps keeps iOS from suspending torrenter until every job is done, at a battery cost. It is a sideload-only trick (the app declares the `audio` background mode) and is off by default. A phone call or another app grabbing audio falls back to the grace window. `jobs.json` is in Application Support (not in Files). Theme is UserDefaults. Incomplete work resumes from dest / `.resume/`. Local network permission may appear for magnet/DHT.
 
 ## MCP
 
@@ -389,7 +389,7 @@ Release: `git tag vX.Y.Z && git push origin vX.Y.Z` (commit must already be on `
 | iOS: Developer Mode missing in search | **Settings → Privacy & Security**, scroll to the **bottom**; not under General |
 | iOS: app icon will not open | **Settings → General → VPN & Device Management** → Trust the developer (see [iOS](#ios)) |
 | iOS: cannot install from GitHub | There is no IPA on Releases; build on a Mac (see [iOS](#ios)) |
-| iOS: jobs stop when you leave | Expected after the ~25 s grace window; reopen and they restart. Turn on **keep alive** to keep downloading in the background |
+| iOS: jobs stop when you leave | Expected after the ~20 s grace window; reopen and they restart. Turn on **keep alive** to keep downloading in the background |
 | iOS: VLC cannot see files | Open Files → On My iPhone → torrenter, or **share** on the idle row |
 
 ## Responsible use

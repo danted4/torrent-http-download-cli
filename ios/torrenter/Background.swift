@@ -5,8 +5,9 @@ import Foundation
 enum BackgroundPlan {
     /// Stop this long before iOS ends the grace window so the engine can flush.
     static let stopMargin: TimeInterval = 5
-    /// Upper bound on the grace window even if iOS reports more time.
-    static let maxGrace: TimeInterval = 25
+    /// Upper bound on the grace window. Devices have given ~26 s in practice and
+    /// `backgroundTimeRemaining` can still read high right after `.background`.
+    static let maxGrace: TimeInterval = 20
 
     /// How long to keep downloading after Home before parking jobs.
     static func graceDelay(remaining: TimeInterval) -> TimeInterval {

@@ -40,6 +40,7 @@ final class KeepAlive {
     private var observers: [NSObjectProtocol] = []
     /// The owner asked for the loop; stays true across interruptions so it can come back.
     private(set) var wanted = false
+    private var lastRecover = Date.distantPast
     /// Called when the loop stops on its own (call, Siri, route change) and could not restart.
     var onInterrupted: (() -> Void)?
     /// Called when the loop is playing again after an interruption.
@@ -135,6 +136,7 @@ final class KeepAlive {
 
     private func interrupted(_ kind: AVAudioSession.InterruptionType?) {
         guard wanted else { return }
+        NSLog("torrenter keep alive: interruption %@", kind == .began ? "began" : "ended")
         switch kind {
         case .began:
             player.stop()
@@ -149,6 +151,11 @@ final class KeepAlive {
 
     private func recover() {
         guard wanted else { return }
+        // Rebuilding the graph must never feed back into another config change. The
+        // owner's tick restarts or parks if a real change is skipped here.
+        guard Date().timeIntervalSince(lastRecover) >= 1 else { return }
+        lastRecover = Date()
+        NSLog("torrenter keep alive: recover")
         if beginPlayback() {
             onRestored?()
         } else {

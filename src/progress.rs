@@ -281,6 +281,22 @@ pub async fn wait_while_paused(snapshot: Option<&JobSnapshot>) -> Result<()> {
     }
 }
 
+/// Resolves once the job is asked to stop or pause; never without a snapshot.
+/// Race only network waits against this, never file I/O: a dropped tokio file
+/// op keeps writing in the background.
+pub async fn until_stop_or_pause(snapshot: Option<&JobSnapshot>) {
+    let Some(snapshot) = snapshot else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    loop {
+        if snapshot.should_stop() || snapshot.is_paused() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 pub async fn until_stop(snapshot: Option<&JobSnapshot>) {
     let Some(snapshot) = snapshot else {
         std::future::pending::<()>().await;

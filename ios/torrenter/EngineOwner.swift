@@ -24,6 +24,8 @@ final class EngineOwner: ObservableObject {
     private var graceTask: Task<Void, Never>?
     private var graceId: UIBackgroundTaskIdentifier = .invalid
     private var keepAliveRetryAt = Date.distantPast
+    private var keepAliveFailing = false
+    static let keepAliveNotice = "keep alive could not start audio; jobs park when you leave"
     static let keepAliveRetry: TimeInterval = 10
 
     func open() {
@@ -136,6 +138,7 @@ final class EngineOwner: ObservableObject {
             }
         }
         let delay = BackgroundPlan.graceDelay(remaining: UIApplication.shared.backgroundTimeRemaining)
+        NSLog("torrenter background: grace %.0fs", delay)
         graceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled else { return }
@@ -158,6 +161,7 @@ final class EngineOwner: ObservableObject {
         guard let engine, inBackground else { return }
         let current = engine.jobs()
         let ids = BackgroundPlan.parkable(current)
+        NSLog("torrenter background: park %d job(s)", ids.count)
         Prefs.saveParked(Array(Set(Prefs.parked() + ids)))
         for job in current where job.active {
             engine.stop(id: job.id)
@@ -172,6 +176,7 @@ final class EngineOwner: ObservableObject {
         let parked = Prefs.parked()
         guard !parked.isEmpty else { return }
         let candidates = BackgroundPlan.resumable(parked: parked, jobs: engine.jobs())
+        NSLog("torrenter foreground: restart %d parked job(s)", candidates.count)
         // Drop ids that are gone, done, or failed; keep the rest until each restart lands.
         var remaining = Set(candidates.map(\.id))
         Prefs.saveParked(Array(remaining))
@@ -192,11 +197,25 @@ final class EngineOwner: ObservableObject {
     private func syncKeepAlive() {
         let want = keepAliveOn && BackgroundPlan.hasLive(engine?.jobs() ?? [])
         if want {
+            guard !keepAlive.playing else { return }
+            if inBackground {
+                // Loop died with no notification we could act on: park the usual way.
+                beginGrace()
+                return
+            }
             // Start while still on screen: iOS will not start audio from the background.
-            guard !keepAlive.playing, !inBackground, Date() >= keepAliveRetryAt else { return }
-            if !keepAlive.start() {
+            guard Date() >= keepAliveRetryAt else { return }
+            if keepAlive.start() {
+                if keepAliveFailing && notice == Self.keepAliveNotice {
+                    notice = nil
+                }
+                keepAliveFailing = false
+            } else {
                 keepAliveRetryAt = Date().addingTimeInterval(Self.keepAliveRetry)
-                notice = "keep alive could not start audio; jobs park when you leave"
+                if !keepAliveFailing {
+                    notice = Self.keepAliveNotice
+                }
+                keepAliveFailing = true
             }
         } else if keepAlive.wanted || keepAlive.playing {
             keepAlive.stop()

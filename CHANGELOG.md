@@ -14,7 +14,7 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
-- Restarting an HTTP job now waits for the stopped task on the same URL and folder to let go of its parts and resume manifest, matching the existing per-hash magnet lock.
+- Restarting an HTTP job now waits for the stopped task on the same URL and folder to let go of its parts and resume manifest, matching the existing per-hash magnet lock. Stop and pause let part downloads wind down and flush their last write instead of dropping them mid-write, and a stalled read no longer delays a stop.
 
 ## [3.7.0] - 2026-11-08
 

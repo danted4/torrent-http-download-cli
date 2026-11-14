@@ -16,8 +16,8 @@ use tokio::task::JoinSet;
 use url::Url;
 
 use crate::progress::{
-    abort_if_paused, check_stop, honor_control, is_pause_abort, is_stopped, until_stop,
-    wait_while_paused, watch_cli_controls, JobSnapshot, ProgressHandle,
+    abort_if_paused, check_stop, honor_control, is_pause_abort, is_stopped, output_lock,
+    until_stop, wait_while_paused, watch_cli_controls, JobSnapshot, ProgressHandle,
 };
 use crate::validate::is_valid_download_url;
 
@@ -172,6 +172,10 @@ pub async fn start_url_download_reported(
     run_url_download(download_url, DownloadLayout::in_dir(dest), Some(snapshot)).await
 }
 
+fn http_lock_key(directory: &Path, download_url: &str) -> String {
+    format!("http:{}\n{download_url}", directory.display())
+}
+
 pub async fn start_url_download_in(download_url: &str, layout: DownloadLayout) -> Result<()> {
     run_url_download(download_url, layout, None).await
 }
@@ -210,6 +214,10 @@ async fn run_url_download(
     }
     progress.set_message("0");
     let downloaded = Arc::new(AtomicU64::new(0));
+    // A restart of the same URL into the same folder waits for the stopped task
+    // to drop its parts and resume manifest (it exits within one stop poll).
+    let output = output_lock(&http_lock_key(&layout.directory, download_url));
+    let _output = output.lock().await;
 
     let work = async {
         let metadata = get_remote_metadata(&client, download_url).await;
@@ -1535,6 +1543,45 @@ mod tests {
                 "missing range start {start}, got {starts:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn restart_waits_for_previous_task_on_same_output() {
+        let body = pattern_body(4096);
+        let dir = tempfile::tempdir().unwrap();
+        let server = config(body.clone(), true, true);
+        let gets = Arc::clone(&server.get_count);
+        let heads = Arc::clone(&server.head_count);
+        let test_server = spawn_server(server).await;
+
+        let held = output_lock(&http_lock_key(dir.path(), &test_server.url));
+        let guard = held.lock().await;
+        let snapshot = Arc::new(JobSnapshot::default());
+        let url = test_server.url.clone();
+        let task = tokio::spawn({
+            let layout = layout(&dir);
+            let snapshot = Arc::clone(&snapshot);
+            async move { start_url_download_reported_in(&url, layout, snapshot).await }
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            heads.load(Ordering::Relaxed),
+            0,
+            "must not probe while locked"
+        );
+        assert_eq!(gets.load(Ordering::Relaxed), 0, "must not GET while locked");
+        assert!(!task.is_finished());
+
+        drop(guard);
+        tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("download should finish once the lock is released")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            fs::read(dir.path().join("payload.bin")).await.unwrap(),
+            body
+        );
     }
 
     #[tokio::test]

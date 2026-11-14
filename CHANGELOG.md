@@ -12,6 +12,10 @@ All notable changes to this project are documented here.
 
 - iOS no longer stops jobs the instant you leave: downloads continue for the ~25 s background grace window, then live jobs are parked and restart on their own when the app is reopened (including after iOS kills it). Jobs you paused stay stopped.
 
+### Fixed
+
+- Restarting an HTTP job now waits for the stopped task on the same URL and folder to let go of its parts and resume manifest, matching the existing per-hash magnet lock.
+
 ## [3.7.0] - 2026-11-08
 
 ### Added

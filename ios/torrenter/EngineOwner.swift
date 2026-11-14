@@ -23,6 +23,8 @@ final class EngineOwner: ObservableObject {
     private var inBackground = false
     private var graceTask: Task<Void, Never>?
     private var graceId: UIBackgroundTaskIdentifier = .invalid
+    private var keepAliveRetryAt = Date.distantPast
+    static let keepAliveRetry: TimeInterval = 10
 
     func open() {
         if engine != nil {
@@ -89,7 +91,7 @@ final class EngineOwner: ObservableObject {
     func restart(job: JobView) {
         guard let engine else { return }
         do {
-            _ = try engine.restart(id: job.id, seed: false, dest: job.dest)
+            _ = try engine.restart(id: job.id, seed: false, dest: Paths.publicDest().path)
             notice = nil
             refresh()
         } catch {
@@ -104,7 +106,8 @@ final class EngineOwner: ObservableObject {
         inBackground = true
         guard let engine else { return }
         engine.persist(force: true)
-        if keepAliveOn && keepAlive.running {
+        // Trust only real playback: an interrupted or route-stopped loop will not keep us alive.
+        if keepAliveOn && keepAlive.playing {
             return
         }
         beginGrace()
@@ -139,6 +142,7 @@ final class EngineOwner: ObservableObject {
             self?.parkLiveJobs()
             // Let engines see the stop flag and flush resume manifests.
             try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
             self?.graceTask = nil
             self?.endGrace()
         }
@@ -167,25 +171,40 @@ final class EngineOwner: ObservableObject {
         guard let engine else { return }
         let parked = Prefs.parked()
         guard !parked.isEmpty else { return }
-        Prefs.saveParked([])
-        for job in BackgroundPlan.resumable(parked: parked, jobs: engine.jobs()) {
+        let candidates = BackgroundPlan.resumable(parked: parked, jobs: engine.jobs())
+        // Drop ids that are gone, done, or failed; keep the rest until each restart lands.
+        var remaining = Set(candidates.map(\.id))
+        Prefs.saveParked(Array(remaining))
+        // Always the current Documents folder: the container path can move after a re-sideload.
+        let dest = Paths.publicDest().path
+        for job in candidates {
             do {
-                _ = try engine.restart(id: job.id, seed: false, dest: job.dest)
+                _ = try engine.restart(id: job.id, seed: false, dest: dest)
+                remaining.remove(job.id)
+                Prefs.saveParked(Array(remaining))
             } catch {
                 notice = engineMessage(error)
             }
         }
     }
 
-    /// Run the silent loop only while keep alive is on and something is live.
+    /// Run the silent loop only while keep alive is on and something is transferring.
     private func syncKeepAlive() {
-        let want = keepAliveOn && (engine?.anyActive() ?? false)
-        if want && !keepAlive.running {
+        let want = keepAliveOn && BackgroundPlan.hasLive(engine?.jobs() ?? [])
+        if want {
             // Start while still on screen: iOS will not start audio from the background.
-            guard !inBackground else { return }
-            keepAlive.start()
-        } else if !want && keepAlive.running {
+            guard !keepAlive.playing, !inBackground, Date() >= keepAliveRetryAt else { return }
+            if !keepAlive.start() {
+                keepAliveRetryAt = Date().addingTimeInterval(Self.keepAliveRetry)
+                notice = "keep alive could not start audio; jobs park when you leave"
+            }
+        } else if keepAlive.wanted || keepAlive.playing {
             keepAlive.stop()
+            keepAliveRetryAt = .distantPast
+            // Only paused jobs left: park them the usual way instead of idling awake.
+            if inBackground {
+                beginGrace()
+            }
         }
     }
 

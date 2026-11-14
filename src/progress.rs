@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -32,6 +33,20 @@ fn mutex_lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// In-process lock per output key so a restarted job waits for the stopped
+/// engine task that still owns the same files.
+pub(crate) fn output_lock(key: &str) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+    let mut map = mutex_lock(LOCKS.get_or_init(|| Mutex::new(HashMap::new())));
+    map.retain(|_, weak| weak.strong_count() > 0);
+    if let Some(existing) = map.get(key).and_then(Weak::upgrade) {
+        return existing;
+    }
+    let lock = Arc::new(tokio::sync::Mutex::new(()));
+    map.insert(key.to_string(), Arc::downgrade(&lock));
+    lock
 }
 
 pub const BAR_TEMPLATE: &str =

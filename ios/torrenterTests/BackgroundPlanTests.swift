@@ -37,6 +37,18 @@ final class BackgroundPlanTests: XCTestCase {
         XCTAssertEqual(BackgroundPlan.parkable(jobs), [1, 2])
     }
 
+    func testPausedOnlyJobsDoNotCountAsLive() {
+        XCTAssertFalse(BackgroundPlan.hasLive([]))
+        XCTAssertFalse(BackgroundPlan.hasLive([
+            job(1, status: "paused", active: true, paused: true),
+            job(2, status: "done", active: false),
+        ]))
+        XCTAssertTrue(BackgroundPlan.hasLive([
+            job(1, status: "paused", active: true, paused: true),
+            job(3, status: "queued", active: true),
+        ]))
+    }
+
     func testResumesOnlyParkedJobsStillStopped() {
         let jobs = [
             job(1, status: "stopped", active: false),

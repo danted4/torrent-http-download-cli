@@ -19,6 +19,11 @@ enum BackgroundPlan {
         jobs.filter { $0.active && !$0.paused }.map(\.id)
     }
 
+    /// Something is actually transferring (paused jobs do not keep the app awake).
+    static func hasLive(_ jobs: [JobView]) -> Bool {
+        jobs.contains { $0.active && !$0.paused }
+    }
+
     /// Parked jobs still sitting stopped (not cleared, done, failed, or already restarted).
     static func resumable(parked: [UInt64], jobs: [JobView]) -> [JobView] {
         let wanted = Set(parked)
@@ -33,11 +38,15 @@ final class KeepAlive {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private var observers: [NSObjectProtocol] = []
-    private(set) var running = false
-    /// Called when another app or a call takes the audio session.
+    /// The owner asked for the loop; stays true across interruptions so it can come back.
+    private(set) var wanted = false
+    /// Called when the loop stops on its own (call, Siri, route change) and could not restart.
     var onInterrupted: (() -> Void)?
     /// Called when the loop is playing again after an interruption.
     var onRestored: (() -> Void)?
+
+    /// Real state, not intent: a route change or interruption stops the engine underneath us.
+    var playing: Bool { engine.isRunning && player.isPlaying }
 
     init() {
         engine.attach(player)
@@ -56,20 +65,51 @@ final class KeepAlive {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.restartIfRunning() }
+            Task { @MainActor in self?.recover() }
+        })
+        // AirPods / headphones / route changes stop the engine without an interruption.
+        observers.append(center.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.recover() }
         })
     }
 
-    func start() {
-        guard !running else { return }
+    /// Start the loop. Returns false (and leaves the audio session inactive) on failure.
+    @discardableResult
+    func start() -> Bool {
+        if playing {
+            wanted = true
+            return true
+        }
+        wanted = beginPlayback()
+        return wanted
+    }
+
+    func stop() {
+        wanted = false
+        teardown()
+    }
+
+    private func beginPlayback() -> Bool {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
             let format = engine.outputNode.inputFormat(forBus: 0)
+            // connect() raises an uncatchable NSException on a 0 Hz / 0 channel format.
+            guard format.sampleRate > 0, format.channelCount > 0,
+                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096)
+            else {
+                teardown()
+                return false
+            }
+            player.stop()
+            engine.stop()
             engine.disconnectNodeOutput(player)
             engine.connect(player, to: engine.mainMixerNode, format: format)
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096) else { return }
             buffer.frameLength = buffer.frameCapacity
             if let channels = buffer.floatChannelData {
                 for channel in 0 ..< Int(format.channelCount) {
@@ -80,39 +120,39 @@ final class KeepAlive {
             try engine.start()
             player.scheduleBuffer(buffer, at: nil, options: .loops)
             player.play()
-            running = true
+            return playing
         } catch {
-            stop()
+            teardown()
+            return false
         }
     }
 
-    func stop() {
+    private func teardown() {
         player.stop()
         engine.stop()
-        running = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func interrupted(_ kind: AVAudioSession.InterruptionType?) {
-        guard running else { return }
+        guard wanted else { return }
         switch kind {
         case .began:
             player.stop()
             engine.stop()
             onInterrupted?()
         case .ended:
-            restartIfRunning()
+            recover()
         default:
             break
         }
     }
 
-    private func restartIfRunning() {
-        guard running else { return }
-        running = false
-        start()
-        if running {
+    private func recover() {
+        guard wanted else { return }
+        if beginPlayback() {
             onRestored?()
+        } else {
+            onInterrupted?()
         }
     }
 }

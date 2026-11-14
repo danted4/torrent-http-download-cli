@@ -42,6 +42,7 @@ final class KeepAlive {
     /// The owner asked for the loop; stays true across interruptions so it can come back.
     private(set) var wanted = false
     private var lastRecover = Date.distantPast
+    private var retryPending = false
     /// Called when the loop stops on its own (call, Siri, route change) and could not restart.
     var onInterrupted: (() -> Void)?
     /// Called when the loop is playing again after an interruption.
@@ -152,9 +153,23 @@ final class KeepAlive {
 
     private func recover() {
         guard wanted else { return }
-        // Rebuilding the graph must never feed back into another config change. The
-        // owner's tick restarts or parks if a real change is skipped here.
-        guard Date().timeIntervalSince(lastRecover) >= 1 else { return }
+        // At most one rebuild per second so a rebuild can never feed a config-change
+        // loop. A real change inside that second gets one retry when it reopens rather
+        // than being dropped; if the owner already started grace, success cancels it.
+        let wait = 1 - Date().timeIntervalSince(lastRecover)
+        guard wait <= 0 else {
+            guard !retryPending else { return }
+            retryPending = true
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000) + 50_000_000)
+                guard let self else { return }
+                self.retryPending = false
+                if !self.playing {
+                    self.recover()
+                }
+            }
+            return
+        }
         lastRecover = Date()
         NSLog("torrenter keep alive: recover")
         if beginPlayback() {

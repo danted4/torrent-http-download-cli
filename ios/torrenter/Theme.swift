@@ -81,4 +81,28 @@ enum Prefs {
     static func saveTheme(_ id: ThemeId) {
         UserDefaults.standard.set(id.rawValue, forKey: themeKey)
     }
+
+    static let keepAliveKey = "keepAlive"
+    static let parkedKey = "parkedJobs"
+
+    static func keepAlive() -> Bool {
+        UserDefaults.standard.bool(forKey: keepAliveKey)
+    }
+
+    static func saveKeepAlive(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: keepAliveKey)
+    }
+
+    /// Job ids stopped by leaving the app, restarted on the next foreground.
+    static func parked() -> [UInt64] {
+        (UserDefaults.standard.array(forKey: parkedKey) as? [String] ?? []).compactMap(UInt64.init)
+    }
+
+    static func saveParked(_ ids: [UInt64]) {
+        if ids.isEmpty {
+            UserDefaults.standard.removeObject(forKey: parkedKey)
+        } else {
+            UserDefaults.standard.set(ids.map(String.init), forKey: parkedKey)
+        }
+    }
 }

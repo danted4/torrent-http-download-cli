@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -11,22 +10,13 @@ use librqbit::{
     TorrentStatsState,
 };
 
-use crate::progress::{check_stop, is_stopped, watch_cli_controls, JobSnapshot, ProgressHandle};
+use crate::progress::{
+    check_stop, is_stopped, output_lock, watch_cli_controls, JobSnapshot, ProgressHandle,
+};
 use crate::validate::is_valid_magnet_url;
 
 fn magnet_folder_lock(hash: &str) -> Arc<tokio::sync::Mutex<()>> {
-    static LOCKS: OnceLock<Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>> = OnceLock::new();
-    let mut map = LOCKS
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    map.retain(|_, weak| weak.strong_count() > 0);
-    if let Some(existing) = map.get(hash).and_then(Weak::upgrade) {
-        return existing;
-    }
-    let lock = Arc::new(tokio::sync::Mutex::new(()));
-    map.insert(hash.to_string(), Arc::downgrade(&lock));
-    lock
+    output_lock(&format!("magnet:{hash}"))
 }
 
 pub fn magnet_info_hash(magnet_uri: &str) -> Option<String> {

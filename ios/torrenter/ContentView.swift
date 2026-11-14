@@ -28,9 +28,19 @@ struct ContentView: View {
                 }
             }
             .buttonStyle(MonoButton(palette: colors))
-            Text("On My iPhone/torrenter")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(colors.dim)
+            HStack(spacing: 8) {
+                Text("On My iPhone/torrenter")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(colors.dim)
+                Spacer(minLength: 8)
+                Toggle(isOn: $owner.keepAliveOn) {
+                    Text("keep alive")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(owner.keepAliveOn ? colors.fg : colors.dim)
+                }
+                .toggleStyle(MiniSwitch(palette: colors))
+                .fixedSize()
+            }
             if owner.jobs.isEmpty {
                 Text("no jobs yet — paste a magnet or HTTP URL")
                     .font(.system(.body, design: .monospaced))
@@ -62,6 +72,8 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .background {
                 owner.leaveForeground()
+            } else if phase == .active {
+                owner.enterForeground()
             }
         }
         .sheet(item: shareSheetItem) { item in
@@ -190,6 +202,35 @@ private struct JobCard: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 4).fill(palette.row))
+    }
+}
+
+/// Compact switch sized to the 12 pt monospaced labels (the system switch is too tall).
+private struct MiniSwitch: ToggleStyle {
+    let palette: Palette
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                configuration.label
+                ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                    Capsule()
+                        .fill(configuration.isOn ? palette.fg : palette.rowAlt)
+                        .overlay(Capsule().stroke(palette.dim, lineWidth: configuration.isOn ? 0 : 1))
+                        .frame(width: 26, height: 14)
+                    Circle()
+                        .fill(configuration.isOn ? palette.bg : palette.dim)
+                        .frame(width: 10, height: 10)
+                        .padding(.horizontal, 2)
+                }
+                .animation(.easeOut(duration: 0.12), value: configuration.isOn)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(configuration.isOn ? "on" : "off")
     }
 }
 

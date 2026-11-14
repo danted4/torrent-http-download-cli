@@ -16,8 +16,9 @@ use tokio::task::JoinSet;
 use url::Url;
 
 use crate::progress::{
-    abort_if_paused, check_stop, honor_control, is_pause_abort, is_stopped, until_stop,
-    wait_while_paused, watch_cli_controls, JobSnapshot, ProgressHandle,
+    abort_if_paused, check_stop, honor_control, is_pause_abort, is_stopped, output_lock,
+    until_stop, until_stop_or_pause, wait_while_paused, watch_cli_controls, DownloadPaused,
+    DownloadStopped, JobSnapshot, ProgressHandle,
 };
 use crate::validate::is_valid_download_url;
 
@@ -172,6 +173,10 @@ pub async fn start_url_download_reported(
     run_url_download(download_url, DownloadLayout::in_dir(dest), Some(snapshot)).await
 }
 
+fn http_lock_key(directory: &Path, download_url: &str) -> String {
+    format!("http:{}\n{download_url}", directory.display())
+}
+
 pub async fn start_url_download_in(download_url: &str, layout: DownloadLayout) -> Result<()> {
     run_url_download(download_url, layout, None).await
 }
@@ -210,9 +215,19 @@ async fn run_url_download(
     }
     progress.set_message("0");
     let downloaded = Arc::new(AtomicU64::new(0));
+    // A restart of the same URL into the same folder waits until the stopped task
+    // has drained its part tasks and flushed every write (see `stream_into_file`).
+    let output = output_lock(&http_lock_key(&layout.directory, download_url));
+    let output_guard = tokio::select! {
+        guard = output.lock() => Some(guard),
+        _ = until_stop(progress.snapshot().map(Arc::as_ref)) => None,
+    };
 
     let work = async {
-        let metadata = get_remote_metadata(&client, download_url).await;
+        let metadata = tokio::select! {
+            metadata = get_remote_metadata(&client, download_url) => metadata,
+            _ = until_stop(progress.snapshot().map(Arc::as_ref)) => bail!(DownloadStopped),
+        };
         let filename = metadata
             .as_ref()
             .map(|meta| meta.filename.clone())
@@ -282,8 +297,12 @@ async fn run_url_download(
         }
     };
 
-    let result = tokio::select! {
-        result = work => result,
+    let mut work = std::pin::pin!(work);
+    let result = if output_guard.is_none() {
+        Err(DownloadStopped.into())
+    } else {
+        tokio::select! {
+        result = &mut work => result,
         _ = async {
             if progress.announce() {
                 if let Some(snapshot) = progress.snapshot() {
@@ -298,9 +317,17 @@ async fn run_url_download(
             if let Some(snapshot) = progress.snapshot() {
                 snapshot.request_stop();
             }
-            Err(crate::progress::DownloadStopped.into())
+            // Let the transfer see the stop and finish its file I/O; dropping it here
+            // would leave tokio writes landing after the output lock is released.
+            match work.await {
+                Ok(()) => Ok(()),
+                Err(error) if is_stopped(&error) => Err(error),
+                Err(_) => Err(DownloadStopped.into()),
+            }
+        }
         }
     };
+    drop(output_guard);
 
     match result {
         Ok(()) => {
@@ -621,7 +648,9 @@ async fn download_multipart(
                         tasks.abort_all();
                     }
                     Ok(Err(error)) if is_stopped(&error) || is_pause_abort(&error) => {
-                        tasks.abort_all();
+                        // Parts exit on their own at the next network wait; never abort
+                        // them mid file op (see `until_stop_or_pause`).
+                        while tasks.join_next().await.is_some() {}
                         return Err(error);
                     }
                     Ok(Err(error)) => {
@@ -637,12 +666,12 @@ async fn download_multipart(
             }
             _ = tokio::time::sleep(Duration::from_millis(120)) => {
                 if progress.should_stop() {
-                    tasks.abort_all();
-                    anyhow::bail!(crate::progress::DownloadStopped);
+                    while tasks.join_next().await.is_some() {}
+                    anyhow::bail!(DownloadStopped);
                 }
                 if progress.is_paused() {
-                    tasks.abort_all();
-                    anyhow::bail!(crate::progress::DownloadPaused);
+                    while tasks.join_next().await.is_some() {}
+                    anyhow::bail!(DownloadPaused);
                 }
             }
         }
@@ -694,12 +723,17 @@ async fn download_part(
     check_stop(progress.snapshot().map(Arc::as_ref))?;
     abort_if_paused(progress.snapshot().map(Arc::as_ref))?;
     let range_start = start + existing_size;
-    let response = client
+    let request = client
         .get(download_url)
         .header(RANGE, format!("bytes={range_start}-{end}"))
-        .send()
-        .await
-        .context("ranged request failed")?;
+        .send();
+    let response = tokio::select! {
+        response = request => response.context("ranged request failed")?,
+        _ = until_stop_or_pause(progress.snapshot().map(Arc::as_ref)) => {
+            check_stop(progress.snapshot().map(Arc::as_ref))?;
+            bail!(DownloadPaused);
+        }
+    };
     if response.status() != StatusCode::PARTIAL_CONTENT {
         bail!(RangesNotHonored);
     }
@@ -756,11 +790,13 @@ async fn stream_single(
     downloaded: &Arc<AtomicU64>,
     byte_cap: Option<u64>,
 ) -> Result<()> {
-    let response = client
-        .get(download_url)
-        .send()
-        .await
-        .context("download request failed")?;
+    let response = tokio::select! {
+        response = client.get(download_url).send() => response.context("download request failed")?,
+        _ = until_stop_or_pause(progress.snapshot().map(Arc::as_ref)) => {
+            check_stop(progress.snapshot().map(Arc::as_ref))?;
+            bail!(DownloadPaused);
+        }
+    };
     let response = match response.error_for_status() {
         Ok(response) => response,
         Err(error) => return Err(error.into()),
@@ -793,45 +829,59 @@ async fn stream_into_file(
 ) -> Result<()> {
     let mut remaining = max_bytes;
     let mut stream = response.bytes_stream();
-    loop {
-        check_stop(progress.snapshot().map(Arc::as_ref))?;
-        abort_if_paused(progress.snapshot().map(Arc::as_ref))?;
-        let Some(chunk) = stream.next().await else {
-            break;
-        };
-        let mut chunk = chunk.context("failed to read download stream")?;
-        if let Some(left) = remaining {
-            if left == 0 {
+    let result: Result<()> = async {
+        loop {
+            check_stop(progress.snapshot().map(Arc::as_ref))?;
+            abort_if_paused(progress.snapshot().map(Arc::as_ref))?;
+            // Only the network read is raced; writes below always run to completion.
+            let next = tokio::select! {
+                next = stream.next() => next,
+                _ = until_stop_or_pause(progress.snapshot().map(Arc::as_ref)) => continue,
+            };
+            let Some(chunk) = next else {
+                break;
+            };
+            let mut chunk = chunk.context("failed to read download stream")?;
+            if let Some(left) = remaining {
+                if left == 0 {
+                    break;
+                }
+                if chunk.len() as u64 > left {
+                    chunk.truncate(left as usize);
+                }
+                remaining = Some(left - chunk.len() as u64);
+            }
+            if chunk.is_empty() {
+                continue;
+            }
+            let n = chunk.len() as u64;
+            if let Some(cap) = byte_cap {
+                if downloaded.load(Ordering::Relaxed) + n > cap {
+                    bail!("update asset exceeded size cap ({cap} bytes)");
+                }
+            }
+            file.write_all(&chunk).await?;
+            downloaded.fetch_add(n, Ordering::Relaxed);
+            progress.inc(n);
+            let next = downloaded.load(Ordering::Relaxed);
+            if next > progress.length().unwrap_or(0) {
+                progress.set_length(next);
+            }
+            if remaining == Some(0) {
                 break;
             }
-            if chunk.len() as u64 > left {
-                chunk.truncate(left as usize);
-            }
-            remaining = Some(left - chunk.len() as u64);
         }
-        if chunk.is_empty() {
-            continue;
+        if remaining.is_some_and(|left| left != 0) {
+            bail!("A download part was incomplete");
         }
-        let n = chunk.len() as u64;
-        if let Some(cap) = byte_cap {
-            if downloaded.load(Ordering::Relaxed) + n > cap {
-                bail!("update asset exceeded size cap ({cap} bytes)");
-            }
-        }
-        file.write_all(&chunk).await?;
-        downloaded.fetch_add(n, Ordering::Relaxed);
-        progress.inc(n);
-        let next = downloaded.load(Ordering::Relaxed);
-        if next > progress.length().unwrap_or(0) {
-            progress.set_length(next);
-        }
-        if remaining == Some(0) {
-            break;
-        }
+        Ok(())
     }
-    if remaining.is_some_and(|left| left != 0) {
-        bail!("A download part was incomplete");
-    }
+    .await;
+    // tokio `write_all` returns before the bytes land; flush on every exit so no
+    // write is still in flight when a restart truncates this file.
+    let flushed = file.flush().await;
+    result?;
+    flushed?;
     Ok(())
 }
 
@@ -856,30 +906,37 @@ async fn merge_parts(
 
     let mut merged = 0u64;
     let mut buffer = vec![0u8; MERGE_CHUNK];
-    for index in 0..layout.part_count {
-        let Some((_, _, expected)) = part_range(index, part_size, total) else {
-            continue;
-        };
-        let path = part_path(layout, key, index);
-        let mut part = File::open(&path)
-            .await
-            .with_context(|| format!("failed to open part {}", path.display()))?;
-        let mut remaining = expected;
-        while remaining > 0 {
-            honor_control(progress.snapshot().map(Arc::as_ref)).await?;
-            let want = remaining.min(buffer.len() as u64) as usize;
-            let bytes_read = part.read(&mut buffer[..want]).await?;
-            if bytes_read == 0 {
-                bail!("A download part was truncated during merge");
+    let copied: Result<()> = async {
+        for index in 0..layout.part_count {
+            let Some((_, _, expected)) = part_range(index, part_size, total) else {
+                continue;
+            };
+            let path = part_path(layout, key, index);
+            let mut part = File::open(&path)
+                .await
+                .with_context(|| format!("failed to open part {}", path.display()))?;
+            let mut remaining = expected;
+            while remaining > 0 {
+                honor_control(progress.snapshot().map(Arc::as_ref)).await?;
+                let want = remaining.min(buffer.len() as u64) as usize;
+                let bytes_read = part.read(&mut buffer[..want]).await?;
+                if bytes_read == 0 {
+                    bail!("A download part was truncated during merge");
+                }
+                output.write_all(&buffer[..bytes_read]).await?;
+                remaining -= bytes_read as u64;
+                merged += bytes_read as u64;
+                downloaded.store(merged, Ordering::Relaxed);
+                progress.set_position(merged.min(total));
             }
-            output.write_all(&buffer[..bytes_read]).await?;
-            remaining -= bytes_read as u64;
-            merged += bytes_read as u64;
-            downloaded.store(merged, Ordering::Relaxed);
-            progress.set_position(merged.min(total));
         }
+        Ok(())
     }
-    output.flush().await?;
+    .await;
+    // Same as `stream_into_file`: never return with a merge write still in flight.
+    let flushed = output.flush().await;
+    copied?;
+    flushed?;
     drop(output);
     let _ = fs::remove_file(&output_path).await;
     fs::rename(&tmp_path, &output_path)
@@ -1535,6 +1592,119 @@ mod tests {
                 "missing range start {start}, got {starts:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn restart_waits_for_previous_task_on_same_output() {
+        let body = pattern_body(4096);
+        let dir = tempfile::tempdir().unwrap();
+        let server = config(body.clone(), true, true);
+        let gets = Arc::clone(&server.get_count);
+        let heads = Arc::clone(&server.head_count);
+        let test_server = spawn_server(server).await;
+
+        let held = output_lock(&http_lock_key(dir.path(), &test_server.url));
+        let guard = held.lock().await;
+        let snapshot = Arc::new(JobSnapshot::default());
+        let url = test_server.url.clone();
+        let task = tokio::spawn({
+            let layout = layout(&dir);
+            let snapshot = Arc::clone(&snapshot);
+            async move { start_url_download_reported_in(&url, layout, snapshot).await }
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            heads.load(Ordering::Relaxed),
+            0,
+            "must not probe while locked"
+        );
+        assert_eq!(gets.load(Ordering::Relaxed), 0, "must not GET while locked");
+        assert!(!task.is_finished());
+
+        drop(guard);
+        tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("download should finish once the lock is released")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            fs::read(dir.path().join("payload.bin")).await.unwrap(),
+            body
+        );
+    }
+
+    /// Range server that sends `sent` bytes of every part, then stalls forever.
+    async fn spawn_stalling_server(
+        total: usize,
+        sent: usize,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let Ok(Some(request)) = read_http_request(&mut stream).await else {
+                        return;
+                    };
+                    if request.starts_with("HEAD ") {
+                        let headers = vec![
+                            ("Content-Length", total.to_string()),
+                            ("Accept-Ranges", "bytes".into()),
+                        ];
+                        let _ = write_http(&mut stream, "HTTP/1.1 200 OK", headers, &[]).await;
+                        return;
+                    }
+                    let (start, end) = parse_range(&request).unwrap_or((0, total as u64 - 1));
+                    let head = format!(
+                        "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {start}-{end}/{total}\r\n\r\n",
+                        end - start + 1
+                    );
+                    let _ = stream.write_all(head.as_bytes()).await;
+                    let _ = stream.write_all(&vec![7u8; sent]).await;
+                    let _ = stream.flush().await;
+                    tokio::time::sleep(Duration::from_secs(600)).await;
+                });
+            }
+        });
+        (format!("http://{addr}/stall.bin"), accept)
+    }
+
+    #[tokio::test]
+    async fn stop_during_stalled_parts_drains_and_flushes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (url, server) = spawn_stalling_server(4096, 100).await;
+        let snapshot = Arc::new(JobSnapshot::default());
+        let task = tokio::spawn({
+            let layout = layout(&dir);
+            let snapshot = Arc::clone(&snapshot);
+            async move { start_url_download_reported_in(&url, layout, snapshot).await }
+        });
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while snapshot.downloaded.load(Ordering::Relaxed) < 400 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "parts never streamed"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        snapshot.request_stop();
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("stalled parts must exit on stop without the read timeout")
+            .unwrap()
+            .unwrap();
+        assert!(snapshot.is_stopped());
+        let mut on_disk = 0;
+        let mut parts = fs::read_dir(dir.path().join(RESUME_DIR_NAME))
+            .await
+            .unwrap();
+        while let Some(entry) = parts.next_entry().await.unwrap() {
+            if entry.file_name().to_string_lossy().contains(".part-") {
+                on_disk += entry.metadata().await.unwrap().len();
+            }
+        }
+        assert_eq!(on_disk, 400, "every streamed byte is flushed before return");
+        server.abort();
     }
 
     #[tokio::test]

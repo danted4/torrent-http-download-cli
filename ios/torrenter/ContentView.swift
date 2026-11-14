@@ -28,9 +28,20 @@ struct ContentView: View {
                 }
             }
             .buttonStyle(MonoButton(palette: colors))
-            Text("On My iPhone/torrenter")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(colors.dim)
+            HStack(spacing: 8) {
+                Text("On My iPhone/torrenter")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(colors.dim)
+                Spacer(minLength: 8)
+                Toggle(isOn: $owner.keepAliveOn) {
+                    Text("keep alive")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(owner.keepAliveOn ? colors.fg : colors.dim)
+                }
+                .toggleStyle(.switch)
+                .tint(colors.fg)
+                .fixedSize()
+            }
             if owner.jobs.isEmpty {
                 Text("no jobs yet — paste a magnet or HTTP URL")
                     .font(.system(.body, design: .monospaced))
@@ -62,6 +73,8 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .background {
                 owner.leaveForeground()
+            } else if phase == .active {
+                owner.enterForeground()
             }
         }
         .sheet(item: shareSheetItem) { item in

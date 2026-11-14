@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- iOS **keep alive** switch (off by default): a silent, mixable audio loop keeps the app running in the background until every job finishes. Sideload-only; declares the `audio` background mode.
+
+### Changed
+
+- iOS no longer stops jobs the instant you leave: downloads continue for the ~25 s background grace window, then live jobs are parked and restart on their own when the app is reopened (including after iOS kills it). Jobs you paused stay stopped.
+
 ## [3.7.0] - 2026-11-08
 
 ### Added

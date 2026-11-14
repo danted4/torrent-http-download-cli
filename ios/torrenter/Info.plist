@@ -31,6 +31,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>torrenter talks to peers on your network for magnet downloads.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>
